@@ -5,29 +5,35 @@ import { OCELLUS_P3, OCELLUS_P4 } from "../OcellusTimings";
 import type { OcellusPlayer } from "../OcellusPlayer";
 import { bossBonuses, withDefenceFloor } from "../bossStats";
 import type { Tick } from "../../../../sim/brands";
-import { tick, tile } from "../../../../sim/brands";
+import { span, tick, tile } from "../../../../sim/brands";
 import type { FrameOf, Heal, Hooks, Landed, Logged } from "../../../../sim/sdk/EncounterBinding";
 import { EncounterBinding } from "../../../../sim/sdk/EncounterBinding";
 import type { BossStance, P3End, P3Event, P3Hit, P3Row, P3RunState } from "../P3Types";
-import type { InputObservation, PlayerObservation } from "../P4Types";
+import type { InputObservation, PlayerObservation, RiftId } from "../P4Types";
 import type { P3Fight, Reach, TurnOutput, TurnStep } from "../p3/fight";
 import { startFight, turn } from "../p3/fight";
+import { VoidRift } from "./VoidRift";
+import { VoidVine } from "./VoidVine";
 
 type BossStep = Readonly<{ player: PlayerObservation; bossHp: number }>;
 type P3Run = Readonly<{ input: InputObservation; event: P3Event; cause: P3Hit; snapshot: BossStep; row: P3Row; end: P3End }>;
 
 const { boss, presentation } = OCELLUS_P4;
+/** VoidRift draws its charge against phase 4's charge time; a phase 3 rift's bar fills over its own. */
+const chargeBar = (charged: number) => span(Math.min(OCELLUS_P4.rifts.chargeAfterSpawn.value, Math.floor((charged * OCELLUS_P4.rifts.chargeAfterSpawn.value) / OCELLUS_P3.rifts.detonatesAfter.value)));
 
 export class OcellusP3 extends Mob {
   readonly binding: EncounterBinding<P3Run>;
   private fight: P3Fight = startFight();
   /** What the last turn's phase has him do on this tick's step. */
   private stance: BossStance = "chasing";
+  private readonly rifts = new Map<RiftId, Readonly<{ mob: VoidRift; spawnedAt: Tick }>>();
+  private vine: VoidVine | null = null;
 
   private readonly hooks: Hooks<P3Run> = {
     "tick-opened": () => undefined,
     "before-npc-hits": () => ({ snapshot: { player: this.target.observe(), bossHp: this.currentStats.hitpoint }, outputs: [] }),
-    "npc-turn": ({ time, snapshot }) => this.turn(time.encounter, snapshot),
+    "npc-turn": ({ time, snapshot, player }) => this.turn(time.encounter, snapshot, player.attackDelay),
     "hit-applied": ({ hit: { cause, receipt } }) => [{ kind: "player-hit", at: cause.at, hit: cause, receipt }],
     "player-hits-settled": ({ time, landed, player }) => this.settlePlayerHits(time.encounter, landed, player.maxHp),
     "player-moved": () => undefined,
@@ -145,24 +151,78 @@ export class OcellusP3 extends Mob {
     }
   }
 
-  private turn(at: Tick, snapshot: BossStep): Pick<TurnStep, "outputs" | "ending"> {
+  private turn(at: Tick, snapshot: BossStep, attackDelay: number): Pick<TurnStep, "outputs" | "ending"> {
+    const cut = this.vineCut(at);
+    const riftsAlive = [...this.rifts].filter(([, { mob }]) => mob.currentStats.hitpoint > 0 && !mob.isDying()).map(([id]) => id);
     const step = turn(this.config.seed, this.fight, {
       at,
       player: snapshot.player,
       boss: { hp: snapshot.bossHp, maxHp: this.stats.hitpoint, reach: this.reach(), anchor: tile(this.location.x, this.location.y) },
+      riftsAlive,
+      attackDelay,
     });
     this.fight = step.fight;
     this.stance = step.fight.schedule.at(at).phase.boss;
     step.outputs.forEach((output) => this.enact(output));
-    return { outputs: step.outputs, ending: step.ending };
+    this.rifts.forEach(({ mob, spawnedAt }) => mob.charge(chargeBar(at - spawnedAt)));
+    if (this.vine !== null) this.target.freeze(2);
+    return { outputs: [...cut, ...step.outputs], ending: step.ending };
   }
 
-  /** The SDK side of his moves: he rises from his corner for Untether, and a severed prayer stays off. */
+  /** A vine the player cut lets them go. */
+  private vineCut(at: Tick): readonly Logged<P3Event>[] {
+    if (this.vine === null || this.vine.standing()) return [];
+    this.vine = null;
+    this.target.frozen = 0;
+    return [{ kind: "event", event: { kind: "vine-cut", at } }];
+  }
+
+  /** The SDK side of his moves: he rises from his corner for Untether, a severed prayer stays off, and the vine and rifts are units. */
   private enact(output: TurnOutput): void {
     if (output.kind !== "event") return;
     const { event } = output;
-    if (event.kind === "boss-moved" && event.move === "untether") this.setLocation({ ...OCELLUS_P3.untether.corner.value });
-    if (event.kind === "prayer-severed") this.target.prayerController.disableProtectionPrayersForTicks(event.lockedFor);
+    switch (event.kind) {
+      case "boss-moved":
+        if (event.move === "untether") this.setLocation({ ...OCELLUS_P3.untether.corner.value });
+        return;
+      case "prayer-severed":
+        this.target.prayerController.disableProtectionPrayersForTicks(event.lockedFor);
+        return;
+      case "vine-rooted": {
+        const vine = new VoidVine(this.region, event.tile);
+        this.region.addMob(vine);
+        this.vine = vine;
+        this.target.setAggro(vine);
+        return;
+      }
+      case "rift-spawned": {
+        const mob = new VoidRift(this.region, event.tile);
+        this.region.addMob(mob);
+        this.rifts.set(event.rift, { mob, spawnedAt: event.at });
+        return;
+      }
+      case "rift-destroyed":
+        this.rifts.delete(event.rift);
+        return;
+      case "rift-detonated":
+        this.rifts.get(event.rift)?.mob.detonate();
+        this.rifts.delete(event.rift);
+        return;
+      case "stage-entered":
+      case "boss-shouted":
+      case "band-aimed":
+      case "hazard-shown":
+      case "void-formed":
+      case "vine-cut":
+      case "player-hit":
+      case "death-prevented":
+      case "run-ended":
+        return;
+      default: {
+        const unhandled: never = event;
+        return unhandled;
+      }
+    }
   }
 
   private settlePlayerHits(at: Tick, landed: readonly Landed<P3Hit>[], maxHp: number): readonly (Logged<P3Event> | Heal)[] {

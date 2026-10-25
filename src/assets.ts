@@ -10,6 +10,7 @@ export const ARCHIVE_OCELLUS_ASSETS = {
   npcs: {
     ocellus: { id: boss.npcId.value, animations: { ...sequences(presentation.bossPoses), ...sequences(OCELLUS_P3.bossPoses) } },
     voidRift: { id: rifts.npcId.value, animations: sequences(rifts.poses) },
+    voidVine: { id: OCELLUS_P3.vine.npcId.value },
   },
   models: {
     brazier: { id: geometry.brazier.value.model, animations: { burning: geometry.brazier.value.burning } },

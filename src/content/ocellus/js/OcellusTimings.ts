@@ -937,9 +937,12 @@ const P3_SPECIAL_LOGS = fightLog("fights 4 and 8, quadrant 1: spin S+24, Untethe
 const RSPROX_PLAN = "https://github.com/MRobertEvers/oldschool-clientc/blob/HEAD/docs/rsprox-analysis/guthixian_archive/ocellus_plan.md";
 const P3_DAMAGE_AUDIT = guide(RSPROX_PLAN, "damage audit, p3 rows: packet captures of six recorded fights");
 const P3_UNTETHER_LOGS = fightLog("fights 1 to 8: Untether U, the slam U+29, a fall shout U+31 in fights 1 and 2, and with the quadrant standing a swing or panic at U+37 in fights 3 to 8");
+const P3_RIFT_LOGS = fightLog("fights 3 to 8, quadrant 1: no rift before the first Untether, then rifts at U+32 and 48 ticks later after each Untether; fight 4 at S+85 and S+133, at S+188 with his first move after the spin at S+179 instead of S+181, then S+240 and S+288 after Untether at S+208, and at S+343 after the spin at S+334; fight 8 the same around its spins at S+185 and S+343");
 
 type ChainStep = "afterSwing" | "afterSlash" | "afterPanic";
 type P3BossPose = "swing" | "panic" | "shadowSlash" | "spinStarts" | "spinLoops" | "spinEnds" | "untetherStarts" | "untetherLoops" | "slam" | "superiorSlash" | "quadrantFalls";
+
+type VineStats = Readonly<{ attack: number; strength: number; defence: number; range: number; magic: number; hitpoint: number }>;
 
 type P3Recipe = Readonly<{
   arena: Readonly<{ grid: Selected<readonly string[]>; playerSpawn: Selected<Tile>; bossAnchor: Selected<Tile> }>;
@@ -979,6 +982,26 @@ type P3Recipe = Readonly<{
     swingsAgain: Selected<TickSpan>;
   }>;
   fallShouts: Selected<readonly string[]>;
+  bombs: Readonly<{ shows: Selected<readonly TickSpan[]>; dropsAfter: Selected<TickSpan>; damage: Selected<DamageRange> }>;
+  voids: Readonly<{ every: Selected<TickSpan>; damage: Selected<DamageRange> }>;
+  rubble: Readonly<{ intoSpin: Selected<TickSpan>; fallsAfter: Selected<TickSpan>; damage: Selected<DamageRange> }>;
+  vine: Readonly<{
+    afterSpins: Selected<readonly number[]>;
+    shouts: Selected<readonly string[]>;
+    rootsAfter: Selected<TickSpan>;
+    npcId: Selected<number>;
+    name: Selected<string>;
+    combatLevel: Selected<number>;
+    stats: Selected<VineStats>;
+  }>;
+  rifts: Readonly<{
+    afterUntether: Selected<TickSpan>;
+    every: Selected<TickSpan>;
+    perSpawn: Selected<number>;
+    clearOfBoss: Selected<number>;
+    detonatesAfter: Selected<TickSpan>;
+    detonationDamage: Selected<DamageRange>;
+  }>;
   shoutLasts: Selected<TickSpan>;
   bossPoses: Readonly<Record<P3BossPose, Selected<number>>>;
 }>;
@@ -1094,6 +1117,51 @@ const P3: P3Recipe = {
     swingsAgain: selected(span(20), "footage-repeated", "unscaled", "his next move 20 ticks after the shout", NO_WIKI_P3_TICKS, fightLog("fights 1, 2, 4, 5, 7 and 8")),
   },
   fallShouts: selected(["Obliteration...", "Run... It matters not..."], "footage-repeated", "unscaled", "one of these as the quadrant falls", NO_WIKI_P3_TICKS, fightLog("fights 1 to 8")),
+  bombs: {
+    shows: selected(
+      [span(4), span(7)],
+      "footage-repeated",
+      "solo",
+      "a void bomb shows over the player 4 and 7 ticks after he lands in quadrant 1, on the quadrant's clock, so a panic does not move them; in a raid they fall on raiders but the tank, and solo on you; the logs show the wave at S+4 in all eight fights and the one at S+7 in fight 1",
+      NO_WIKI_P3_TICKS, guide(RSPROX_PLAN, "phase 3 segments: a bomb 6 (and 9 in the first) after each jump"), guide(KIRBY_GUIDE, "8:55"), fightLog("fights 1 to 8: spotanim 4299 over raiders at S+4, and in fight 1 at S+7; fight 8 at S+4 through its panic"),
+    ),
+    dropsAfter: selected(span(2), "footage-repeated", "unscaled", "it drops 2 ticks after it shows, on the tile it showed over", NO_WIKI_P3_TICKS, guide(RSPROX_PLAN, "phase 3 segments: the bomb's drop and impact at +2"), fightLog("fights 1 to 8: spotanims 4300 and 4301 2 ticks after each 4299")),
+    damage: selected<DamageRange>({ min: 6, max: 11 }, "spec-single", "unscaled", "typeless, on the bomb's tile as it drops; it leaves a void that stays until the quadrant falls, so for the rest of the drill", NO_WIKI_P3_TICKS, P3_DAMAGE_AUDIT),
+  },
+  voids: {
+    every: selected(span(2), "spec-single", "unscaled", "a bomb's void hits a player on it every 2 ticks from the tick it forms, never the tick after", NO_WIKI_P3_TICKS, P3_DAMAGE_AUDIT),
+    damage: selected<DamageRange>({ min: 6, max: 7 }, "spec-single", "unscaled", "typeless", NO_WIKI_P3_TICKS, P3_DAMAGE_AUDIT),
+  },
+  rubble: {
+    intoSpin: selected(span(3), "footage-repeated", "solo", "rubble shows over each raider 3 ticks into a spin in quadrant 1, 6 in later quadrants; solo, over you", NO_WIKI_P3_TICKS, guide(KIRBY_GUIDE, "7:20"), fightLog("fights 1 to 8: spotanim 4346 over raiders at P+3 in every quadrant 1 spin, P+6 in later quadrants")),
+    fallsAfter: selected(span(5), "footage-repeated", "unscaled", "it falls 5 ticks after it shows, so one step off its tile clears it", NO_WIKI_P3_TICKS, guide(KIRBY_GUIDE, "7:20"), fightLog("fights 1 to 8: hits on raiders still on their rubble tile 5 ticks after spotanim 4346")),
+    damage: selected<DamageRange>({ min: 14, max: 16 }, "footage-repeated", "unscaled", "typeless; 14 to 16 on nearly every raider still on the tile, through any prayer; no log shows a void left where it fell", NO_WIKI_P3_TICKS, fightLog("fights 1 to 8: 14, 15 and 16 on raiders still on their rubble tile")),
+  },
+  vine: {
+    afterSpins: selected([1, 3], "footage-repeated", "unscaled", "its shout comes with his first move after a quadrant's first and third spins, never an even one", NO_WIKI_P3_TICKS, fightLog("fights 2 to 8: with his first move after quadrant 1's first spin, a panic's shout in its place in fights 3, 4, 6 and 7; fights 4 and 8 again after the third spin")),
+    shouts: selected(["The void... will take you...", "Await... the void..."], "footage-repeated", "unscaled", "one of these; a panic's shout on the same tick shows in its place", NO_WIKI_P3_TICKS, fightLog("fights 1 to 8")),
+    rootsAfter: selected(
+      span(3),
+      "footage-repeated",
+      "solo",
+      "3 ticks after the shout the vine roots its target where they stand and holds them until it dies, with no hit for staying; in a raid it takes anyone but the tank and a teammate cuts it, and solo it takes you and you cut it",
+      noWiki("the Void Vine page says a teammate must break it or it deals upwards of 50 (Void Vine rev 15377692); the logs show no such hit"),
+      guide(RSPROX_PLAN, "phase 3: the vine 3 ticks after its line"),
+      fightLog("fights 2 and 6: npc 16681 3 ticks after the shout; vines lived 7 to 32 ticks with no hit on their target"),
+    ),
+    npcId: selected(16681, "spec-confirmed", "unscaled", "Void Vine", wiki("https://oldschool.runescape.wiki/w/Void_Vine", 15377692), fightLog("fights 1 to 8: npc 16681")),
+    name: selected("Void Vine", "spec-confirmed", "unscaled", "its name in game", wiki("https://oldschool.runescape.wiki/w/Void_Vine", 15377692)),
+    combatLevel: selected(0, "spec-confirmed", "unscaled", "level 0 on its hover text", wiki("https://oldschool.runescape.wiki/w/Void_Vine", 15377692), fightLog("fights 3 to 5: npc 16681 at level 0")),
+    stats: selected<VineStats>({ attack: 1, strength: 1, defence: 1, range: 1, magic: 1, hitpoint: 44 }, "spec-single", "unscaled", "44 hitpoints; the wiki lists no other stat, so the rest are 1 (assumption)", wiki("https://oldschool.runescape.wiki/w/Void_Vine", 15377692), guide(RSPROX_PLAN, "the rifts and vine row: 44 health")),
+  },
+  rifts: {
+    afterUntether: selected(span(32), "footage-repeated", "unscaled", "none before quadrant 1's first Untether; after each Untether the quadrant stands through, a Void Rift 32 ticks after Untether starts", NO_WIKI_P3_TICKS, guide(RSPROX_PLAN, "phase 3 rifts: U+32 during Untether"), P3_RIFT_LOGS),
+    every: selected(span(48), "footage-repeated", "unscaled", "then one every 48 ticks; one due while he spins comes with his first move after the spin, and the next is timed from when it was due (assumption: no log has one between a late rift and the next Untether)", NO_WIKI_P3_TICKS, guide(RSPROX_PLAN, "phase 3 rifts: 3, 51, 99, and one due in a spin at the swing after it"), P3_RIFT_LOGS),
+    perSpawn: selected(1, "spec-confirmed", "solo", "max(1, living raiders / 2), so one solo; each quadrant has one kind, and this drill places Void Rifts only", NO_WIKI_P3_TICKS, guide("https://github.com/MRobertEvers/oldschool-clientc/blob/HEAD/docs/rsprox-analysis/guthixian_archive/RAID_PLAN.md", "void rifts, phase 3: one at three raiders, two at four, max(1, living / 2)")),
+    clearOfBoss: selected(2, "assumption", "unscaled", "a random floor tile of the wedge at least 2 tiles from his 3x3; the logs place them all over the wedge", NO_WIKI_P3_ARENA, P3_RIFT_LOGS),
+    detonatesAfter: selected(span(30), "footage-repeated", "unscaled", "a rift left alive detonates 30 ticks after it appears, its flare on the player and its hit on the same tick; destroying one first resets the player's attack cooldown, and standard ranged and melee attacks max-hit it, as in phase 4", VOID_RIFT_PAGE, guide(RSPROX_PLAN, "phase 3 rifts: detonates 30 ticks from its add"), fightLog("fight 3: a Void Rift from S+88 detonated at S+118; fight 5: two Void Augmenters 30 ticks after they appeared")),
+    detonationDamage: selected<DamageRange>({ min: 39, max: 41 }, "footage-repeated", "unscaled", "typeless; 39 from a Void Rift and 40, 40 and 41 from a Void Augmenter; one raider under Protect from Magic took 18", noWiki("the Void Rift page does not say what an unkilled rift does (Void Rift rev 15380527)"), fightLog("fights 3 and 5")),
+  },
   shoutLasts: selected(span(3), "assumption", "unscaled", "how long his overhead text shows", NO_WIKI_PRESENTATION),
   bossPoses: {
     swing: pose(14842, "npc_ocellus_phase3_melee_basic", "inferred", "the swing, 2 ticks; by its name"),

@@ -3,11 +3,13 @@ import type { Player } from "osrs-sdk";
 import type { P3Config } from "./OcellusTimings";
 import { OCELLUS_P3, OCELLUS_P4 } from "./OcellusTimings";
 import { dress, loadoutSnapshot } from "./OcellusLoadout";
-import { OcellusPlayer } from "./OcellusPlayer";
+import type { OcellusPlayer } from "./OcellusPlayer";
+import { P3Player } from "./P3Player";
 import type { Tile } from "../../../sim/brands";
 import { tile } from "../../../sim/brands";
 import type { BossMove, P3Event, P3HitSource, P3Log, P3Snapshot } from "./P3Types";
 import { P3Marks } from "./entities/P3Marks";
+import { FloorHole, PlayerLook } from "./entities/P4Views";
 import { OcellusP3 } from "./mobs/OcellusP3";
 import { ARENA_SIZE, FLOOR, QUADRANT_1_FLOOR, RIM, footprint } from "./p3/arena";
 
@@ -20,6 +22,10 @@ const LETHAL_HIT: Readonly<Record<P3HitSource, string>> = {
   "untether-slam": "Untether's slam",
   "untether-aftershock": "Untether's aftershock",
   "superior-slash": "a superior slash",
+  bomb: "a void bomb",
+  void: "a void",
+  rubble: "falling rubble",
+  "rift-detonation": "a void rift",
 };
 
 const { bossPoses, spin, shoutLasts } = OCELLUS_P3;
@@ -38,10 +44,10 @@ const MOVE_POSE: Readonly<Record<BossMove, number>> = {
 const OPEN_FLOOR = ["#4a4339", "#3f392f"] as const;
 const CLOSED_FLOOR = ["#2c2822", "#25221d"] as const;
 
-type Views = Readonly<{ boss: OcellusP3; marks: P3Marks; chat: string[] }>;
-type Mounted = Readonly<{ kind: "unmounted" }> | (Readonly<{ kind: "mounted"; player: OcellusPlayer }> & Views);
+type Views = Readonly<{ region: Region; boss: OcellusP3; marks: P3Marks; player: PlayerLook; chat: string[] }>;
+type Mounted = Readonly<{ kind: "unmounted" }> | (Readonly<{ kind: "mounted"; unit: OcellusPlayer }> & Views);
 
-function present(event: P3Event, { boss, marks, chat }: Views): void {
+function present(event: P3Event, { region, boss, marks, player, chat }: Views): void {
   switch (event.kind) {
     case "boss-moved":
       boss.playAnimation(MOVE_POSE[event.move]);
@@ -56,6 +62,18 @@ function present(event: P3Event, { boss, marks, chat }: Views): void {
     case "prayer-severed":
       chat.push(...spin.severChat.value);
       return;
+    case "hazard-shown":
+      marks.aim(event.hazard, [event.tile], event.landsAt);
+      return;
+    case "void-formed":
+      region.addEntity(new FloorHole(region, event.tile));
+      return;
+    case "rift-destroyed":
+      chat.push(OCELLUS_P4.rifts.killChat.value);
+      return;
+    case "rift-detonated":
+      player.riftBurst();
+      return;
     case "death-prevented":
       chat.push(`Invincible: ${LETHAL_HIT[event.source]} would have killed you on tick ${event.at}.`);
       return;
@@ -64,6 +82,9 @@ function present(event: P3Event, { boss, marks, chat }: Views): void {
       return;
     case "stage-entered":
     case "player-hit":
+    case "vine-rooted":
+    case "vine-cut":
+    case "rift-spawned":
       return;
     default: {
       const unhandled: never = event;
@@ -103,7 +124,7 @@ export class P3Region extends Region {
   }
 
   initialiseRegion(): { player: Player } {
-    const player: OcellusPlayer = new OcellusPlayer(this, { ...OCELLUS_P3.arena.playerSpawn.value }, () => boss.binding, (target) => target === boss && boss.levitating());
+    const player: OcellusPlayer = new P3Player(this, { ...OCELLUS_P3.arena.playerSpawn.value }, () => boss.binding, (target) => target === boss && boss.levitating());
     const boss: OcellusP3 = new OcellusP3(this, this.config, player, () => this.invincible);
     const marks = new P3Marks(this);
     dress(player, this.config.choices.setup.option.value);
@@ -112,7 +133,7 @@ export class P3Region extends Region {
     this.addPlayer(player);
     this.addMob(boss);
     this.setBoss(boss);
-    this.mounted = { kind: "mounted", boss, player, marks, chat: [] };
+    this.mounted = { kind: "mounted", region: this, boss, unit: player, marks, player: new PlayerLook(player), chat: [] };
     return { player };
   }
 
@@ -140,7 +161,7 @@ export class P3Region extends Region {
 
   snapshot(): P3Snapshot | null {
     if (this.mounted.kind === "unmounted") return null;
-    const { boss, player } = this.mounted;
+    const { boss, unit: player } = this.mounted;
     return {
       run: boss.runState(),
       boss: { npcId: OCELLUS_P4.boss.npcId.value, hp: boss.currentStats.hitpoint, maxHp: boss.stats.hitpoint, visible: boss.visible(), defence: boss.currentStats.defence },

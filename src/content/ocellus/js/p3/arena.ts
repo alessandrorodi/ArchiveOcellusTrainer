@@ -18,6 +18,13 @@ export function footprint(anchor: Tile): TileSet {
   return TileSet.area(tile(x, y - BOSS_SIZE + 1), tile(x + BOSS_SIZE - 1, y));
 }
 
+/** Tiles from his 3x3 to `at`, counting diagonal steps as one; 0 under him. */
+export function distanceFromBody(anchor: Tile, at: Tile): number {
+  const across = Math.max(anchor.x - at.x, 0, at.x - (anchor.x + BOSS_SIZE - 1));
+  const along = Math.max(anchor.y - BOSS_SIZE + 1 - at.y, 0, at.y - anchor.y);
+  return Math.max(across, along);
+}
+
 function middle(anchor: Tile): Tile {
   const half = Math.floor(BOSS_SIZE / 2);
   return tile(anchor.x + half, anchor.y - half);

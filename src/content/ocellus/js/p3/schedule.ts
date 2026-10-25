@@ -9,7 +9,7 @@ export type P3Schedule = Schedule<P3Stage, P3Phase, P3Beat, never>;
 type Table = readonly [Slot<P3Phase, P3Beat>, ...Slot<P3Phase, P3Beat>[]];
 
 const QUADRANTS: readonly Quadrant[] = [1, 2, 3];
-const { chain, specials, spin, untether, insolence } = OCELLUS_P3;
+const { chain, specials, spin, untether, insolence, rubble } = OCELLUS_P3;
 
 const slot = (stage: P3Stage, boss: BossStance, beats: readonly P3Beat[]): Slot<P3Phase, P3Beat> => {
   const phase: P3Phase = { stage, boss };
@@ -33,6 +33,7 @@ function spinTable(): Table {
     lastCut + spin.nextMoveAfterLastCut.value,
     (offset) => [
       ...(offset === 0 ? [{ kind: "spin-starts" } as const] : []),
+      ...(offset === rubble.intoSpin.value ? [{ kind: "rubble-shows" } as const] : []),
       ...saws.flatMap(({ saw, cut }): P3Beat[] => {
         if (offset === cut - 1) return [{ kind: "saw-tell", saw }];
         if (offset === cut) return [{ kind: "saw-cut", saw, last: cut === lastCut }];

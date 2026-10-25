@@ -1,4 +1,3 @@
-import type { HitReceipt } from "../../../sim/combat";
 import type { At } from "./drill";
 import { footprintCentre, startP3Drill } from "./p3drill";
 
@@ -13,8 +12,6 @@ const CORNER = { x: 21, y: 7 };
 const U = 53;
 const P = 24;
 const I = 139;
-
-const receipt = (requested: number, beforeHp: number, prayer: "melee" | "magic" | null): HitReceipt => ({ requested, applied: requested, beforeHp, afterHp: beforeHp - requested, prayer });
 
 type Drill = Awaited<ReturnType<typeof startP3Drill>>;
 const hitsOf = (drill: Drill, kind: string) => drill.events("player-hit").filter((event) => event.hit.kind === kind).map((event) => [event.at, event.receipt.prayer] as const);
@@ -73,13 +70,13 @@ describe("P3 drill", () => {
   });
 
   test.each([
-    { prayer: "Protect from Melee" as const, hits: [[4, receipt(2, 99, "melee")], [7, receipt(5, 97, "melee")], [14, receipt(4, 64, "melee")], [17, receipt(1, 60, "melee")]] },
-    { prayer: null, hits: [[4, receipt(8, 99, null)], [7, receipt(19, 91, null)], [14, receipt(17, 44, null)], [17, receipt(7, 27, null)]] },
+    { prayer: "Protect from Melee" as const, hits: [[4, 2, "melee"], [7, 5, "melee"], [14, 4, "melee"], [17, 1, "melee"]] },
+    { prayer: null, hits: [[4, 8, null], [7, 19, null], [14, 17, null], [17, 7, null]] },
   ])("a swing in reach is chip of 0 to 6 through Protect from Melee and up to 26 without it: $prayer", async ({ prayer, hits }) => {
-    const drill = await startP3Drill({ seed: 1 });
+    const drill = await startP3Drill({ seed: 1, invincible: true });
     if (prayer !== null) drill.pray(prayer);
     drill.tickTo(18);
-    const swings = drill.events("player-hit").filter((event) => event.hit.kind === "swing").map((event) => [event.at, event.receipt]);
+    const swings = drill.events("player-hit").filter((event) => event.hit.kind === "swing").map((event) => [event.at, event.receipt.requested, event.receipt.prayer]);
     drill.dispose();
     expect(swings).toEqual(hits);
   });

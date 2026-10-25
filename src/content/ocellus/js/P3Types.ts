@@ -1,7 +1,7 @@
 import type { Seed, Tick, TickSpan, Tile, WorldTick } from "../../../sim/brands";
 import type { HitReceipt } from "../../../sim/combat";
 import type { P3Choices } from "./OcellusTimings";
-import type { InputObservation, LoadoutSnapshot, PlayerObservation } from "./P4Types";
+import type { InputObservation, LoadoutSnapshot, PlayerObservation, RiftId } from "./P4Types";
 
 export type Quadrant = 1 | 2 | 3;
 export type ReachRule = "melee-range" | "within-two";
@@ -20,6 +20,7 @@ export type P3Beat =
   | Readonly<{ kind: "spin-starts" }>
   | Readonly<{ kind: "saw-tell"; saw: number }>
   | Readonly<{ kind: "saw-cut"; saw: number; last: boolean }>
+  | Readonly<{ kind: "rubble-shows" }>
   | Readonly<{ kind: "untether-starts" }>
   | Readonly<{ kind: "untether-magic" }>
   | Readonly<{ kind: "untether-slam" }>
@@ -36,11 +37,17 @@ export type P3Hit =
   | Readonly<{ kind: "untether-magic"; at: Tick }>
   | Readonly<{ kind: "untether-slam"; at: Tick }>
   | Readonly<{ kind: "untether-aftershock"; at: Tick }>
-  | Readonly<{ kind: "superior-slash"; at: Tick; nth: number }>;
+  | Readonly<{ kind: "superior-slash"; at: Tick; nth: number }>
+  | Readonly<{ kind: "bomb"; at: Tick }>
+  | Readonly<{ kind: "void"; at: Tick }>
+  | Readonly<{ kind: "rubble"; at: Tick }>
+  | Readonly<{ kind: "rift-detonation"; at: Tick; rift: RiftId }>;
 export type P3HitSource = P3Hit["kind"];
 
 export type BossMove = "swing" | "panic" | "shadow-slash" | "spin" | "saw" | "last-saw" | "untether" | "slam" | "superior-slash" | "quadrant-falls";
 export type BandAttack = "shadow-slash" | "superior-slash";
+/** Falls on the tile it shows over, a fixed time later. */
+export type Hazard = "bomb" | "rubble";
 
 export type P3End = Readonly<{ kind: "quadrant-cleared" }> | Readonly<{ kind: "death" }>;
 
@@ -50,6 +57,13 @@ export type P3Event =
   | Readonly<{ kind: "boss-shouted"; at: Tick; text: string }>
   | Readonly<{ kind: "band-aimed"; at: Tick; attack: BandAttack; tiles: readonly Tile[]; landsAt: Tick }>
   | Readonly<{ kind: "prayer-severed"; at: Tick; lockedFor: TickSpan }>
+  | Readonly<{ kind: "hazard-shown"; at: Tick; hazard: Hazard; tile: Tile; landsAt: Tick }>
+  | Readonly<{ kind: "void-formed"; at: Tick; tile: Tile }>
+  | Readonly<{ kind: "vine-rooted"; at: Tick; tile: Tile }>
+  | Readonly<{ kind: "vine-cut"; at: Tick }>
+  | Readonly<{ kind: "rift-spawned"; at: Tick; rift: RiftId; tile: Tile }>
+  | Readonly<{ kind: "rift-destroyed"; at: Tick; rift: RiftId; tile: Tile }>
+  | Readonly<{ kind: "rift-detonated"; at: Tick; rift: RiftId; tile: Tile }>
   | Readonly<{ kind: "player-hit"; at: Tick; hit: P3Hit; receipt: HitReceipt }>
   | Readonly<{ kind: "death-prevented"; at: Tick; source: P3HitSource }>
   | Readonly<{ kind: "run-ended"; at: Tick; reason: P3End }>;
