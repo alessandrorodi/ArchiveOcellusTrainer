@@ -56,3 +56,4 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Timing cues](./timing-cues.md) covers the sound checkboxes, resuming audio on the first click, the "End..." shout, the orb chimes, the flood sound and the lifeforce chat line.
 - [P3 drill (hidden)](./p3-drill.md) covers the `ARCHIVE_P3` build flag, the P3 arena, the boss's swings and panic shot, the 75% interim end, Start P4 and the Phase box.
 - [P3 recorded kills](./p3-recorded-kills.md) covers quadrant 1 as the fight logs show it: the chain of swings and shadow slashes, the special order, the spin and its severed prayer, Untether, Insolence, and the quadrant's fall.
+- [P3 adds and hazards](./p3-adds.md) covers the void bombs and their voids, the spin's rubble, the vine and the Void Rifts.

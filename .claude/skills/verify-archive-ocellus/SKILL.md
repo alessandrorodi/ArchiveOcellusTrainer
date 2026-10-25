@@ -169,7 +169,7 @@ Each run writes to `.verify/<UTC timestamp>/` (gitignored; override with `VERIFY
 | `p3-arena-2d.png`, `p3-arena-2d-tiles.json`, `p3-arena-2d-page-errors.json`, `p3-arena-3d.png`, `p3-arena-3d-tiles.json` | `?phase=p3&seed=1` in 2D, then in 3D, at P3 tick 3: the screen and the page pixel of each sampled open, closed and rim tile |
 | `p3-snapshot.json`, `p3-boss-bar.json`, `p3-swings.json`, `p3-swings-console.log`, `p3-swings-page-errors.json` | The 3D page with Protect from Melee clicked after P3 tick 1: the snapshot, every boss bar text by P3 tick, and the fight log at tick 18 |
 | `p3-panic.json`, `p3-panic-console.log`, `p3-panic-page-errors.json` | `?phase=p3&seed=1` reopened with Protect from Melee clicked after tick 1 and a click on (27, 9) after tick 3: the fight log at tick 11 |
-| `p3-chain.json`, `p3-chain-console.log`, `p3-chain-page-errors.json` | `?phase=p3&seed=1&invincible=on` left to run with no input: the fight log at tick 91, past the first Untether |
+| `p3-chain.json`, `p3-chain-console.log`, `p3-chain-page-errors.json` | `?phase=p3&seed=1&invincible=on` left to run with no input: the fight log at tick 134, past the first Untether and the first two rifts |
 | `p3-clear-panel.json`, `p3-clear.png`, `p3-clear.json`, `p3-clear-console.log`, `p3-clear-page-errors.json` | `?phase=p3&seed=100&bosshp=3991` with the boss clicked after tick 2: the result panel, its screen and the fight log |
 | `p3-start-p4.json`, `p3-start-p4-page-errors.json`, `p3-checks.json` | The page Start P4 loaded: its search, the log header's phase, the boss HP, the rejected keys and the Phase box; then each P3 check's result |
 | `cleanup.log` | Confirmation that the recorded PID stopped |
