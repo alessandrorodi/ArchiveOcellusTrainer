@@ -352,10 +352,10 @@ function RunTime({ phase, at, invincible }: Readonly<{ phase: "P3" | "P4"; at: T
 function RunResultText({ result }: Readonly<{ result: DrillOutcome }>) {
   if (result.phase === "p3") {
     switch (result.reason.kind) {
-      case "quadrant-cleared":
+      case "phase-cleared":
         return (
           <>
-            <h2 id="run_result_title">Quadrant 1 cleared (interim end)</h2>
+            <h2 id="run_result_title">Phase 3 cleared</h2>
             <RunTime phase="P3" at={result.at} invincible={result.invincible} />
           </>
         );
@@ -413,7 +413,7 @@ function RunResultPanel({ drill }: Readonly<{ drill: Drill }>) {
   const setup = config.choices.setup.key;
   const again = (seed: string | null) =>
     startRun(drill.phase === "p4" ? { phase: "p4", setup, focus: drill.config.choices.focus.key, seed, invincible: region.invincible } : { phase: "p3", setup, seed, invincible: region.invincible });
-  const cleared = result.phase === "p3" && result.reason.kind === "quadrant-cleared";
+  const cleared = result.phase === "p3" && result.reason.kind === "phase-cleared";
   return (
     <section id="run_result" role="dialog" aria-labelledby="run_result_title">
       <RunResultText result={result} />

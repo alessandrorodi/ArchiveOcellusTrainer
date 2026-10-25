@@ -940,7 +940,11 @@ const P3_UNTETHER_LOGS = fightLog("fights 1 to 8: Untether U, the slam U+29, a f
 const P3_RIFT_LOGS = fightLog("fights 3 to 8, quadrant 1: no rift before the first Untether, then rifts at U+32 and 48 ticks later after each Untether; fight 4 at S+85 and S+133, at S+188 with his first move after the spin at S+179 instead of S+181, then S+240 and S+288 after Untether at S+208, and at S+343 after the spin at S+334; fight 8 the same around its spins at S+185 and S+343");
 
 type ChainStep = "afterSwing" | "afterSlash" | "afterPanic";
-type P3BossPose = "swing" | "panic" | "shadowSlash" | "spinStarts" | "spinLoops" | "spinEnds" | "untetherStarts" | "untetherLoops" | "slam" | "superiorSlash" | "quadrantFalls";
+type P3BossPose = "swing" | "panic" | "shadowSlash" | "spinStarts" | "spinLoops" | "spinEnds" | "untetherStarts" | "untetherLoops" | "slam" | "superiorSlash" | "quadrantFalls" | "quadrantFallsLoop" | "escape";
+/** Untether and Insolence, in the order they take turns within a quadrant. */
+type OtherSpecials = readonly [Exclude<P3Special, "spin">, Exclude<P3Special, "spin">];
+/** Quadrant 1, or the two after it. */
+export type QuadrantKind = "first" | "later";
 
 type VineStats = Readonly<{ attack: number; strength: number; defence: number; range: number; magic: number; hitpoint: number }>;
 
@@ -952,9 +956,9 @@ type P3Recipe = Readonly<{
   swing: Readonly<{ protectedDamage: Selected<DamageRange>; unprotectedDamage: Selected<DamageRange> }>;
   panic: Readonly<{ shout: Selected<string>; landsAfter: Selected<TickSpan>; damage: Selected<DamageRange> }>;
   shadowSlash: Readonly<{ landsAfter: Selected<TickSpan>; width: Selected<number>; damage: Selected<DamageRange> }>;
-  specials: Selected<readonly [P3Special, ...P3Special[]]>;
+  specials: Selected<Readonly<{ firstQuadrant: OtherSpecials; laterQuadrants: OtherSpecials }>>;
   spin: Readonly<{
-    saws: Selected<number>;
+    saws: Selected<Readonly<Record<Quadrant, number>>>;
     firstCut: Selected<TickSpan>;
     cutEvery: Selected<TickSpan>;
     nextMoveAfterLastCut: Selected<TickSpan>;
@@ -964,7 +968,6 @@ type P3Recipe = Readonly<{
   }>;
   untether: Readonly<{
     shout: Selected<string>;
-    corner: Selected<Tile>;
     magic: Selected<readonly TickSpan[]>;
     magicDamage: Selected<DamageRange>;
     slam: Selected<TickSpan>;
@@ -982,9 +985,19 @@ type P3Recipe = Readonly<{
     swingsAgain: Selected<TickSpan>;
   }>;
   fallShouts: Selected<readonly string[]>;
-  bombs: Readonly<{ shows: Selected<readonly TickSpan[]>; dropsAfter: Selected<TickSpan>; damage: Selected<DamageRange> }>;
+  quadrants: Readonly<{
+    corners: Selected<Readonly<Record<Quadrant, Tile>>>;
+    stones: Selected<readonly number[]>;
+    escapeShoutAt: Selected<TickSpan>;
+    escapeShouts: Selected<readonly string[]>;
+    fadesAt: Selected<TickSpan>;
+    goneAt: Selected<TickSpan>;
+    nextJumpAt: Selected<TickSpan>;
+    leftOnIt: Selected<DamageRange>;
+  }>;
+  bombs: Readonly<{ shows: Selected<Readonly<Record<QuadrantKind, readonly TickSpan[]>>>; dropsAfter: Selected<TickSpan>; damage: Selected<DamageRange> }>;
   voids: Readonly<{ every: Selected<TickSpan>; damage: Selected<DamageRange> }>;
-  rubble: Readonly<{ intoSpin: Selected<TickSpan>; fallsAfter: Selected<TickSpan>; damage: Selected<DamageRange> }>;
+  rubble: Readonly<{ intoSpin: Selected<Readonly<Record<QuadrantKind, TickSpan>>>; fallsAfter: Selected<TickSpan>; damage: Selected<DamageRange> }>;
   vine: Readonly<{
     afterSpins: Selected<readonly number[]>;
     shouts: Selected<readonly string[]>;
@@ -995,6 +1008,7 @@ type P3Recipe = Readonly<{
     stats: Selected<VineStats>;
   }>;
   rifts: Readonly<{
+    afterLanding: Selected<TickSpan>;
     afterUntether: Selected<TickSpan>;
     every: Selected<TickSpan>;
     perSpawn: Selected<number>;
@@ -1075,15 +1089,16 @@ const P3: P3Recipe = {
     width: selected(3, "footage-repeated", "unscaled", "a band 3 tiles wide toward his tank, snapped to the nearest of the 8 directions from his middle tile, from the ring touching his body to the wedge's edge; straight bands are the 3 tiles in line with his body, diagonal ones start at his corner; solo, his tank is you", NO_WIKI_P3_TICKS, fightLog("fights 3 to 8: 111 bands of spotanim 4335, each aimed at the raider his swings hit")),
     damage: selected<DamageRange>({ min: 25, max: 28 }, "footage-repeated", "unscaled", "typeless, so a protection prayer does not help", NO_WIKI_P3_TICKS, P3_DAMAGE_AUDIT, fightLog("fights 1 to 8: 57 of the 75 hits on raiders the tick after a slash's animation are 25 to 28")),
   },
-  specials: selected<readonly [P3Special, ...P3Special[]]>(
-    ["spin", "untether", "spin", "insolence"],
+  specials: selected<Readonly<{ firstQuadrant: OtherSpecials; laterQuadrants: OtherSpecials }>>(
+    { firstQuadrant: ["untether", "insolence"], laterQuadrants: ["insolence", "untether"] },
     "footage-repeated",
     "unscaled",
-    "after every two sets: the spin every other special, and between them Untether and Insolence in turn, Untether first; his HP plays no part, so a quadrant that stands through Untether goes on the same way; in later quadrants Insolence comes first, and the spin keeps alternating across a quadrant's fall, so a quadrant that falls after a spin opens with the other special",
-    NO_WIKI_P3_TICKS, P3_SPECIAL_LOGS,
+    "after every two sets: the spin every other special through the whole phase, across each quadrant's fall, and between spins Untether and Insolence in turn within a quadrant, Untether first in quadrant 1 and Insolence first after it; so a quadrant that falls after a spin opens with Untether or Insolence, and one that falls after another special opens with the spin; his HP plays no part",
+    NO_WIKI_P3_TICKS, P3_SPECIAL_LOGS, guide(RSPROX_PLAN, "phase 3: a segment opens with Insolence if the quadrant before fell right after a spin"),
+    fightLog("fight 1: quadrant 2 opens with the spin after Untether, quadrant 3 with the spin after Insolence; fight 2: quadrant 3 opens with Insolence after a spin; fights 5 to 7: quadrant 2 spin, Insolence, spin, Untether"),
   ),
   spin: {
-    saws: selected(1, "footage-repeated", "unscaled", "one saw in quadrant 1; one more for each quadrant destroyed", NO_WIKI_P3_TICKS, fightLog("fights 1 to 8: one cut in quadrant 1, two in quadrant 2 and three in quadrant 3")),
+    saws: selected<Readonly<Record<Quadrant, number>>>({ 1: 1, 2: 2, 3: 3 }, "footage-repeated", "unscaled", "one saw, and one more for each quadrant fallen: a loop animation for each extra saw, then the end animation", NO_WIKI_P3_TICKS, guide(RSPROX_PLAN, "phase 3: one prayer loop per quadrant fallen, 3 ticks apart, then the out at 5 + 3 x loops"), fightLog("fights 1 to 8: one cut in quadrant 1, two in quadrant 2 and three in quadrant 3")),
     firstCut: selected(span(5), "footage-repeated", "unscaled", "the first saw cuts 5 ticks after the spin starts, on the tick his loop animation, or for the last saw his end animation, plays", NO_WIKI_P3_TICKS, P3_CHAIN_LOGS, fightLog("fight 2: per-tick overheads through each spin")),
     cutEvery: selected(span(3), "footage-repeated", "unscaled", "each later saw 3 ticks after the one before", NO_WIKI_P3_TICKS, fightLog("fight 2, quadrant 3: loops at P+5 and P+8, the end at P+11")),
     nextMoveAfterLastCut: selected(span(4), "footage-repeated", "unscaled", "his next move 4 ticks after the last cut", NO_WIKI_P3_TICKS, P3_CHAIN_LOGS),
@@ -1099,7 +1114,7 @@ const P3: P3Recipe = {
   },
   untether: {
     shout: selected("Untether...", "footage-repeated", "unscaled", "his shout as Untether starts", STRATEGIES_P3, P3_UNTETHER_LOGS),
-    corner: selected(tile(21, 7), "footage-repeated", "unscaled", "he rises from his quadrant's corner: the south-west tile of his 3x3 at cache (37, 47) in quadrant 1", NO_WIKI_P3_ARENA, fightLog("fights 3 to 5: every Untether in quadrant 1 at cache (37, 47)")),
+    
     magic: selected([span(10), span(14), span(18), span(22)], "footage-repeated", "unscaled", "magic lands on everyone 10, 14, 18 and 22 ticks in, so Untether is prayed with Protect from Magic", NO_WIKI_P3_TICKS, guide(KIRBY_GUIDE, "4:37"), fightLog("fights 1 to 8: zeros on every raider under Protect from Magic at U+10, U+14, U+18 and U+22")),
     magicDamage: selected<DamageRange>({ min: 14, max: 29 }, "spec-single", "unscaled", "without Protect from Magic, from 12 unprayed hits; nearly every hit through Protect from Magic was 0", NO_WIKI_P3_TICKS, P3_DAMAGE_AUDIT),
     slam: selected(span(29), "footage-repeated", "unscaled", "the slam hits whoever is not under his 3x3 at the end of the tick before; the aftershock a tick later hits whoever is still under him at the end of the slam's tick; so be under him by U+28 and one tile out on U+29", NO_WIKI_P3_TICKS, guide(KIRBY_GUIDE, "5:00"), fightLog("fight 1: 36 on the one raider outside at U+29, 21 and 41 at U+30 on the two still under")),
@@ -1118,12 +1133,12 @@ const P3: P3Recipe = {
   },
   fallShouts: selected(["Obliteration...", "Run... It matters not..."], "footage-repeated", "unscaled", "one of these as the quadrant falls", NO_WIKI_P3_TICKS, fightLog("fights 1 to 8")),
   bombs: {
-    shows: selected(
-      [span(4), span(7)],
+    shows: selected<Readonly<Record<QuadrantKind, readonly TickSpan[]>>>(
+      { first: [span(4), span(7)], later: [span(4)] },
       "footage-repeated",
       "solo",
-      "a void bomb shows over the player 4 and 7 ticks after he lands in quadrant 1, on the quadrant's clock, so a panic does not move them; in a raid they fall on raiders but the tank, and solo on you; the logs show the wave at S+4 in all eight fights and the one at S+7 in fight 1",
-      NO_WIKI_P3_TICKS, guide(RSPROX_PLAN, "phase 3 segments: a bomb 6 (and 9 in the first) after each jump"), guide(KIRBY_GUIDE, "8:55"), fightLog("fights 1 to 8: spotanim 4299 over raiders at S+4, and in fight 1 at S+7; fight 8 at S+4 through its panic"),
+      "a void bomb shows over the player 4 and 7 ticks after he lands in quadrant 1 and 4 ticks after he lands in a later one, on the quadrant's clock, so a panic does not move them, with one on the same tile turned into each other standing quadrant; in a raid they fall on raiders but the tank, and solo on you; the logs show the wave at S+4 in all eight fights and the one at S+7 in fight 1",
+      NO_WIKI_P3_TICKS, guide(RSPROX_PLAN, "phase 3 segments: a bomb 6 (and 9 in the first) after each jump"), guide(KIRBY_GUIDE, "8:55"), fightLog("fights 1 to 8: spotanim 4299 over raiders at S+4, and in fight 1 at S+7; fight 8 at S+4 through its panic; fight 6, quadrant 2: at S+4 over three raiders and on the same tiles turned into the other two standing quadrants"),
     ),
     dropsAfter: selected(span(2), "footage-repeated", "unscaled", "it drops 2 ticks after it shows, on the tile it showed over", NO_WIKI_P3_TICKS, guide(RSPROX_PLAN, "phase 3 segments: the bomb's drop and impact at +2"), fightLog("fights 1 to 8: spotanims 4300 and 4301 2 ticks after each 4299")),
     damage: selected<DamageRange>({ min: 6, max: 11 }, "spec-single", "unscaled", "typeless, on the bomb's tile as it drops; it leaves a void that stays until the quadrant falls, so for the rest of the drill", NO_WIKI_P3_TICKS, P3_DAMAGE_AUDIT),
@@ -1133,7 +1148,7 @@ const P3: P3Recipe = {
     damage: selected<DamageRange>({ min: 6, max: 7 }, "spec-single", "unscaled", "typeless", NO_WIKI_P3_TICKS, P3_DAMAGE_AUDIT),
   },
   rubble: {
-    intoSpin: selected(span(3), "footage-repeated", "solo", "rubble shows over each raider 3 ticks into a spin in quadrant 1, 6 in later quadrants; solo, over you", NO_WIKI_P3_TICKS, guide(KIRBY_GUIDE, "7:20"), fightLog("fights 1 to 8: spotanim 4346 over raiders at P+3 in every quadrant 1 spin, P+6 in later quadrants")),
+    intoSpin: selected<Readonly<Record<QuadrantKind, TickSpan>>>({ first: span(3), later: span(6) }, "footage-repeated", "solo", "rubble shows over each raider 3 ticks into a spin in quadrant 1 and 6 in later quadrants; solo, over you", NO_WIKI_P3_TICKS, guide(KIRBY_GUIDE, "7:20"), fightLog("fights 1 to 8: spotanim 4346 over raiders at P+3 in every quadrant 1 spin; fights 1 and 2: at P+6 in quadrant 2")),
     fallsAfter: selected(span(5), "footage-repeated", "unscaled", "it falls 5 ticks after it shows, so one step off its tile clears it", NO_WIKI_P3_TICKS, guide(KIRBY_GUIDE, "7:20"), fightLog("fights 1 to 8: hits on raiders still on their rubble tile 5 ticks after spotanim 4346")),
     damage: selected<DamageRange>({ min: 14, max: 16 }, "footage-repeated", "unscaled", "typeless; 14 to 16 on nearly every raider still on the tile, through any prayer; no log shows a void left where it fell", NO_WIKI_P3_TICKS, fightLog("fights 1 to 8: 14, 15 and 16 on raiders still on their rubble tile")),
   },
@@ -1155,6 +1170,7 @@ const P3: P3Recipe = {
     stats: selected<VineStats>({ attack: 1, strength: 1, defence: 1, range: 1, magic: 1, hitpoint: 44 }, "spec-single", "unscaled", "44 hitpoints; the wiki lists no other stat, so the rest are 1 (assumption)", wiki("https://oldschool.runescape.wiki/w/Void_Vine", 15377692), guide(RSPROX_PLAN, "the rifts and vine row: 44 health")),
   },
   rifts: {
+    afterLanding: selected(span(3), "footage-repeated", "unscaled", "in quadrants 2 and 3 the first rift comes 3 ticks after he lands, then the same clock as in quadrant 1", NO_WIKI_P3_TICKS, guide(RSPROX_PLAN, "phase 3 rifts: 3, 51, 99 in later segments"), fightLog("fights 6 to 8: rifts at S+3 of quadrants 2 and 3, then 48 ticks later")),
     afterUntether: selected(span(32), "footage-repeated", "unscaled", "none before quadrant 1's first Untether; after each Untether the quadrant stands through, a Void Rift 32 ticks after Untether starts", NO_WIKI_P3_TICKS, guide(RSPROX_PLAN, "phase 3 rifts: U+32 during Untether"), P3_RIFT_LOGS),
     every: selected(span(48), "footage-repeated", "unscaled", "then one every 48 ticks; one due while he spins comes with his first move after the spin, and the next is timed from when it was due (assumption: no log has one between a late rift and the next Untether)", NO_WIKI_P3_TICKS, guide(RSPROX_PLAN, "phase 3 rifts: 3, 51, 99, and one due in a spin at the swing after it"), P3_RIFT_LOGS),
     perSpawn: selected(1, "spec-confirmed", "solo", "max(1, living raiders / 2), so one solo; each quadrant has one kind, and this drill places Void Rifts only", NO_WIKI_P3_TICKS, guide("https://github.com/MRobertEvers/oldschool-clientc/blob/HEAD/docs/rsprox-analysis/guthixian_archive/RAID_PLAN.md", "void rifts, phase 3: one at three raiders, two at four, max(1, living / 2)")),
@@ -1163,6 +1179,30 @@ const P3: P3Recipe = {
     detonationDamage: selected<DamageRange>({ min: 39, max: 41 }, "footage-repeated", "unscaled", "typeless; 39 from a Void Rift and 40, 40 and 41 from a Void Augmenter; one raider under Protect from Magic took 18", noWiki("the Void Rift page does not say what an unkilled rift does (Void Rift rev 15380527)"), fightLog("fights 3 and 5")),
   },
   shoutLasts: selected(span(3), "assumption", "unscaled", "how long his overhead text shows", NO_WIKI_PRESENTATION),
+  quadrants: {
+    corners: selected<Readonly<Record<Quadrant, Tile>>>(
+      { 1: tile(21, 7), 2: tile(9, 7), 3: tile(9, 19) },
+      "footage-repeated",
+      "unscaled",
+      "he takes the quadrants counter-clockwise from the north-east, landing in each one's corner, where he also rises for Untether: the south-west tile of his 3x3 at cache (37, 47), (25, 47) and (25, 35)",
+      NO_WIKI_P3_ARENA, guide(RSPROX_PLAN, "phase 3: each later segment goes to the next quadrant counter-clockwise; recorded orders NE, NW, SW"),
+      fightLog("fights 3 to 5: Untether at cache (37, 47) in quadrant 1, (25, 47) in quadrant 2 and (25, 35) in quadrant 3; fight 5: his first swing in quadrant 2 from (25, 47)"),
+    ),
+    stones: selected(
+      [4, 7, 10],
+      "footage-repeated",
+      "unscaled",
+      "the cross between the wedges is a chasm, with each wedge's inner corner, leaving 84 tiles a wedge; three stepping stones sit on each arm's middle line 4, 7 and 10 tiles out, the only way over: a jump from the bank beside the near stone, a hop to each stone, and a jump to the bank beside the far one, one a tick",
+      NO_WIKI_P3_ARENA, guide(RSPROX_PLAN, "phase 3: three stepping stones at 4, 7 and 10 out on each arm, four hops a crossing; each quadrant's 84 tiles"),
+      fightLog("fight 3: raiders on the stones at cache (31, 37) and (38, 41); no other raider on the cross in 2,588 phase 3 positions"),
+    ),
+    escapeShoutAt: selected(span(11), "footage-repeated", "unscaled", "his second line 11 ticks after the quadrant starts to fall", NO_WIKI_P3_TICKS, guide(RSPROX_PLAN, "phase 3: D+11"), fightLog("fights 1, 2 and 4 to 8: animation 14862 at D+11, with the line in fights 6 to 8")),
+    escapeShouts: selected(["You can't... escape... the end...", "This end... comes...", "Everything... ends..."], "footage-repeated", "unscaled", "one of these", NO_WIKI_P3_TICKS, guide(RSPROX_PLAN, "phase 3: D+11"), fightLog("fights 6 to 8")),
+    fadesAt: selected(span(12), "spec-single", "unscaled", "he fades out 12 ticks after the quadrant starts to fall and is gone until he lands in the next one", NO_WIKI_P3_TICKS, guide(RSPROX_PLAN, "phase 3: D+12")),
+    goneAt: selected(span(13), "spec-single", "unscaled", "the quadrant's floor is gone 13 ticks after it starts to fall", NO_WIKI_P3_TICKS, guide(RSPROX_PLAN, "phase 3: D+13, its 84 tiles become blocking")),
+    nextJumpAt: selected(span(17), "footage-repeated", "unscaled", "he lands in the next quadrant 17 ticks after the last one starts to fall; after the third, phase 4 starts then", NO_WIKI_P3_TICKS, guide(RSPROX_PLAN, "phase 3: D+17"), fightLog("fights 1, 2 and 4 to 8: the next segment 17 ticks after each fall; fights 1, 2 and 6: phase 4 17 ticks after the third")),
+    leftOnIt: selected<DamageRange>({ min: 255, max: 255 }, "assumption", "unscaled", "a player still on the quadrant as its floor goes is lost to the void; the packet captures say only that its tiles become blocking", NO_WIKI_P3_ARENA, guide(RSPROX_PLAN, "phase 3: D+13")),
+  },
   bossPoses: {
     swing: pose(14842, "npc_ocellus_phase3_melee_basic", "inferred", "the swing, 2 ticks; by its name"),
     panic: pose(14851, "npc_ocellus_phase3_basic_projectile_all", "footage-repeated", "the panic shot, 3 ticks; on every panic in the logs"),
@@ -1175,6 +1215,8 @@ const P3: P3Recipe = {
     slam: pose(14861, "npc_ocellus_phase3_unleash_out", "footage-repeated", "the slam, 4 ticks; at U+29 in the logs"),
     superiorSlash: pose(14848, "npc_ocellus_phase3_superior_slash", "footage-repeated", "a superior slash of Insolence; in the logs"),
     quadrantFalls: pose(14859, "npc_ocellus_phase3_quadrant_destroy_in", "footage-repeated", "the fall's start, with its shout; in the logs"),
+    quadrantFallsLoop: pose(14860, "npc_ocellus_phase3_quadrant_destroy_loop", "footage-repeated", "the fall's loop from 2 ticks in; in the logs"),
+    escape: pose(14862, "npc_ocellus_phase3_unleash_out_90", "footage-repeated", "with his second line 11 ticks into the fall; in the logs"),
   },
 };
 

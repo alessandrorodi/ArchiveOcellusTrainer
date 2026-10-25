@@ -2,11 +2,12 @@ import { OCELLUS_P3 } from "../OcellusTimings";
 import type { Seed, Tick, Tile } from "../../../../sim/brands";
 import { after, span } from "../../../../sim/brands";
 import type { AttackDelayCut, HitRequest, Logged } from "../../../../sim/sdk/EncounterBinding";
+import type { TileSet } from "../../../../sim/tiles";
 import type { P3Event, P3Hit, P3Stage } from "../P3Types";
 import type { RiftId } from "../P4Types";
 import { riftId } from "../P4Types";
 import { roll, rollInt } from "../roll";
-import { QUADRANT_1_FLOOR, distanceFromBody } from "./arena";
+import { distanceFromBody } from "./arena";
 
 const { voids, rifts } = OCELLUS_P3;
 
@@ -23,6 +24,7 @@ export const DRAW: Readonly<Record<Exclude<P3Hit["kind"], "swing">, number>> = {
   void: 8,
   rubble: 9,
   "rift-detonation": 10,
+  "quadrant-gone": 11,
 };
 
 type FormedVoid = Readonly<{ tile: Tile; formed: Tick }>;
@@ -32,7 +34,8 @@ type Rift = Readonly<{ id: RiftId; tile: Tile; spawnedAt: Tick }>;
 export type Adds = Readonly<{ voids: readonly FormedVoid[]; rifts: readonly Rift[]; riftDue: Tick | null }>;
 export const NO_ADDS: Adds = { voids: [], rifts: [], riftDue: null };
 
-export type AddsFacts = Readonly<{ at: Tick; player: Tile; anchor: Tile; stage: P3Stage; untetherStarted: boolean; riftsAlive: readonly RiftId[]; attackDelay: number }>;
+/** `floor` is the floor of the quadrant he fights in. */
+export type AddsFacts = Readonly<{ at: Tick; player: Tile; anchor: Tile; floor: TileSet; stage: P3Stage; untetherStarted: boolean; riftsAlive: readonly RiftId[]; attackDelay: number }>;
 export type AddsOutput = Logged<P3Event> | HitRequest<P3Hit> | AttackDelayCut;
 export type AddsStep = Readonly<{ adds: Adds; outputs: readonly AddsOutput[] }>;
 
@@ -75,10 +78,10 @@ function settleRifts(seed: Seed, adds: Adds, facts: AddsFacts): AddsStep {
  * while he spins waits for his first move after the spin.
  */
 function spawnRifts(seed: Seed, adds: Adds, facts: AddsFacts): AddsStep {
-  const { at, anchor, stage, untetherStarted, player } = facts;
+  const { at, anchor, floor, stage, untetherStarted, player } = facts;
   if (untetherStarted) return { adds: { ...adds, riftDue: after(at, rifts.afterUntether.value) }, outputs: [] };
   if (adds.riftDue === null || at < adds.riftDue || stage === "spin" || stage === "untether") return { adds, outputs: [] };
-  const open = QUADRANT_1_FLOOR.tiles().filter((tile) => distanceFromBody(anchor, tile) >= rifts.clearOfBoss.value && !sameTile(tile, player));
+  const open = floor.tiles().filter((tile) => distanceFromBody(anchor, tile) >= rifts.clearOfBoss.value && !sameTile(tile, player));
   const spawned = Array.from({ length: open.length === 0 ? 0 : rifts.perSpawn.value }, (_, slot): Rift => ({ id: riftId(at, slot), tile: open[Math.floor(roll(seed, "p3Tile", at, slot) * open.length)], spawnedAt: at }));
   return {
     adds: { ...adds, rifts: [...adds.rifts, ...spawned], riftDue: after(adds.riftDue, rifts.every.value) },
@@ -91,4 +94,18 @@ export function stepAdds(seed: Seed, adds: Adds, facts: AddsFacts): AddsStep {
   const settled = settleRifts(seed, adds, facts);
   const spawned = spawnRifts(seed, settled.adds, facts);
   return { adds: spawned.adds, outputs: [...hits, ...settled.outputs, ...spawned.outputs] };
+}
+
+/** In quadrants 2 and 3 the rift clock starts as he lands. */
+export function landInQuadrant(adds: Adds, at: Tick): Adds {
+  return { ...adds, riftDue: after(at, rifts.afterLanding.value) };
+}
+
+/** A quadrant's floor goes: its voids go with it, and so do the rifts still standing on it. */
+export function loseFloor(adds: Adds, at: Tick, floor: TileSet): AddsStep {
+  const lost = adds.rifts.filter((rift) => floor.contains(rift.tile));
+  return {
+    adds: { voids: adds.voids.filter((formed) => !floor.contains(formed.tile)), rifts: adds.rifts.filter((rift) => !lost.includes(rift)), riftDue: null },
+    outputs: lost.map((rift) => logged({ kind: "rift-removed", at, rift: rift.id })),
+  };
 }
