@@ -5,12 +5,14 @@ import type { Tick, Tile } from "../../../../sim/brands";
 import type { BandAttack, Hazard } from "../P3Types";
 
 /** A practice marker, not a game graphic: where an aimed band, a bomb or rubble will land, and his 3x3 through Untether. */
-type Mark = Readonly<{ tiles: readonly Tile[]; colour: string; opacity: number }>;
+/** `halo` rings the tile in 2D, where the player's own square would hide a mark on their tile. */
+type Mark = Readonly<{ tiles: readonly Tile[]; colour: string; opacity: number; halo: boolean }>;
 type Landing = BandAttack | Hazard;
 type Band = Readonly<{ tiles: readonly Tile[]; attack: Landing; landsAt: Tick }>;
 
 const BAND_COLOUR: Readonly<Record<Landing, string>> = { "shadow-slash": "#b01030", "superior-slash": "#7a1010", bomb: "#8a2be2", rubble: "#8a6a3a" };
 const BAND_OPACITY = 0.4;
+const HALO_WIDTH = 0.12;
 const UNTETHER_COLOUR = "#9f48bd";
 const UNTETHER_OPACITY = 0.3;
 const INSET = 0.06;
@@ -92,8 +94,8 @@ export class P3Marks extends Entity {
 
   private refresh(): void {
     this.marks = [
-      ...(this.zone.length > 0 ? [{ tiles: this.zone, colour: UNTETHER_COLOUR, opacity: UNTETHER_OPACITY }] : []),
-      ...this.bands.map(({ tiles, attack }) => ({ tiles, colour: BAND_COLOUR[attack], opacity: BAND_OPACITY })),
+      ...(this.zone.length > 0 ? [{ tiles: this.zone, colour: UNTETHER_COLOUR, opacity: UNTETHER_OPACITY, halo: false }] : []),
+      ...this.bands.map(({ tiles, attack }) => ({ tiles, colour: BAND_COLOUR[attack], opacity: BAND_OPACITY, halo: attack === "bomb" || attack === "rubble" })),
     ];
   }
 
@@ -112,10 +114,15 @@ export class P3Marks extends Entity {
   override draw(tickPercent: number, context: OffscreenCanvasRenderingContext2D): void {
     const scale = Settings.tileSize;
     context.save();
-    for (const { tiles, colour, opacity } of this.marks) {
+    for (const { tiles, colour, opacity, halo } of this.marks) {
       context.globalAlpha = opacity;
       context.fillStyle = colour;
       for (const { x, y } of tiles) context.fillRect((x + INSET) * scale, (y + INSET) * scale, (1 - 2 * INSET) * scale, (1 - 2 * INSET) * scale);
+      if (!halo) continue;
+      context.globalAlpha = 1;
+      context.strokeStyle = colour;
+      context.lineWidth = HALO_WIDTH * scale;
+      for (const { x, y } of tiles) context.strokeRect((x - HALO_WIDTH / 2) * scale, (y - HALO_WIDTH / 2) * scale, (1 + HALO_WIDTH) * scale, (1 + HALO_WIDTH) * scale);
     }
     context.restore();
   }
