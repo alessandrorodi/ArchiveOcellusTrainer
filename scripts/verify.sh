@@ -322,7 +322,8 @@ P3_BOSS_TILE='{"x":20,"y":7}'
 P3_BOSS_CLICK_TICK=2
 P3_CLEAR='{"panel":{"lines":["Quadrant 1 cleared (interim end)","P3 time: 6 ticks (0:03.6)"],"buttons":["Repeat P3","Retry seed","Start P4"]},"tick":6,"bossHp":3937}'
 P3_CHAIN_QUERY="?phase=p3&seed=1&invincible=on"
-P3_CHAIN_LAST_TICK=91
+P3_CHAIN_LAST_TICK=134
+P3_ADDS='[[4,"hazard-shown"],[6,"void-formed"],[7,"hazard-shown"],[27,"hazard-shown"],[36,"vine-rooted"],[63,"vine-cut"],[85,"rift-spawned"],[113,"hazard-shown"],[115,"rift-detonated"],[133,"rift-spawned"]]'
 P3_CHAIN='[[4,"swing"],[7,"swing"],[10,"shadow-slash"],[14,"swing"],[17,"swing"],[20,"shadow-slash"],[24,"spin"],[29,"last-saw"],[33,"swing"],[36,"swing"],[39,"shadow-slash"],[43,"swing"],[46,"swing"],[49,"shadow-slash"],[53,"untether"],[82,"slam"],[90,"swing"]]'
 P3_START_P4='{"search":"?phase=p4&setup=ranged","bossHp":1312}'
 CREDIT_LINE="Created using intellectual property belonging to Jagex Limited under the terms of Jagex's Fan Content Policy. This content is not endorsed by or affiliated with Jagex."
@@ -2072,7 +2073,7 @@ drive_p3_drill() {
   done
 
   node -e '
-    const fs = require("fs"), zlib = require("zlib"), [dir, bossNpc, swings, panic, clear, startP4, chain] = process.argv.slice(1);
+    const fs = require("fs"), zlib = require("zlib"), [dir, bossNpc, swings, panic, clear, startP4, chain, adds] = process.argv.slice(1);
     const read = (file) => JSON.parse(fs.readFileSync(`${dir}/${file}`, "utf8"));
     function decode(file) {
       const buf = fs.readFileSync(`${dir}/${file}`);
@@ -2120,6 +2121,7 @@ drive_p3_drill() {
       prayerOrders: swingLog.rows.flatMap((row) => row.inputs.filter((input) => input.kind === "prayer-published").map((input) => [row.tick, input.prayer])),
       panic: hits(panicLog).filter(([at]) => at <= 10),
       chain: chainLog.rows.flatMap((row) => row.events).filter((event) => event.kind === "boss-moved" && event.at <= 90).map(({ at, move }) => [at, move]),
+      adds: chainLog.rows.flatMap((row) => row.events).filter((event) => ["hazard-shown", "void-formed", "vine-rooted", "vine-cut", "rift-spawned", "rift-detonated"].includes(event.kind) && event.at <= 133).map(({ at, kind }) => [at, kind]),
       escape: panicLog.rows.flatMap((row) => row.inputs.filter((input) => input.kind === "walk-ordered").map((input) => [row.tick, input.destination])),
       clear: { panel: { lines: panel.lines, buttons: panel.buttons }, run: panel.run, row: clearedAt && { tick: clearedAt.tick, bossHp: clearedAt.bossHp, events: clearedAt.events.map((event) => event.kind) } },
       startP4: p4,
@@ -2131,6 +2133,7 @@ drive_p3_drill() {
       p3SwingsChipUnderMeleePrayer: observed.prayerOrders.length > 0 && observed.prayerOrders[0][0] < 4 && observed.prayerOrders[0][1] === "melee" && same(observed.swings, JSON.parse(swings)),
       p3PanicOutOfReach: same(observed.panic, JSON.parse(panic)) && observed.escape.length === 1,
       p3ChainAsRecorded: same(observed.chain, JSON.parse(chain)),
+      p3AddsAsRecorded: same(observed.adds, JSON.parse(adds)),
       p3InterimClear: same(observed.clear.panel, expectedClear.panel) && observed.clear.run?.kind === "ended" && observed.clear.run.reason.kind === "quadrant-cleared" &&
         observed.clear.row?.tick === expectedClear.tick && observed.clear.run.at === expectedClear.tick && observed.clear.row.bossHp.atPostTick === expectedClear.bossHp && observed.clear.row.events.includes("run-ended"),
       p3StartP4OpensP4: p4.search === expectedStart.search && p4.bossHp === expectedStart.bossHp && same(p4.rejected, []) && p4.logPhase === null && p4.phaseBox === "p4",
@@ -2138,7 +2141,7 @@ drive_p3_drill() {
     };
     console.log(JSON.stringify({ observed, checks }, null, 2));
     process.exit(Object.values(checks).every(Boolean) ? 0 : 1);
-  ' "$VERIFY_DIR" "$BOSS_NPC" "$P3_SWINGS" "$P3_PANIC" "$P3_CLEAR" "$P3_START_P4" "$P3_CHAIN" >"$VERIFY_DIR/p3-checks.json"
+  ' "$VERIFY_DIR" "$BOSS_NPC" "$P3_SWINGS" "$P3_PANIC" "$P3_CLEAR" "$P3_START_P4" "$P3_CHAIN" "$P3_ADDS" >"$VERIFY_DIR/p3-checks.json"
   local verdict=$?
   cat "$VERIFY_DIR/p3-checks.json"
   [[ $verdict -eq 0 ]] || log "a P3 drill check failed"
