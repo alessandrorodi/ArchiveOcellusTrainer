@@ -67,8 +67,11 @@ export async function startP3Drill(options: P3DrillOptions = {}) {
       return rows().flatMap((row) => row.events.flatMap((event) => (event.kind === "boss-moved" ? [[event.at, event.move] as const] : [])));
     },
     click: (on: At) => clickTile(region.world, on),
-    /** Puts the player on a tile at once, as the end of a tick would. */
-    place: (on: At) => player().setLocation({ x: on.x, y: on.y }),
+    /** Puts the player on a tile at once, as the end of a tick would, and stops any walk so they stay there. */
+    place: (on: At) => {
+      player().setLocation({ x: on.x, y: on.y });
+      player().destinationLocation = { x: on.x, y: on.y };
+    },
     /** Sets the boss's HP between ticks, as hits landing on him would. */
     bossHp: (hp: number) => {
       boss().currentStats.hitpoint = hp;
