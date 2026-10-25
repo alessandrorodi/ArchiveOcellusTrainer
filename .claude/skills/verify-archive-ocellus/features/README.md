@@ -8,7 +8,7 @@ This directory is the maintained source for verifying what a user of the trainer
 - `public/osrs-assets/manifest.json` contains `npc-16677` and `npc-16678` from cache `openrs2:2746`, and `public/osrs-assets/sprites/` holds the head icons.
 - `AGENT_BROWSER_SESSION` names a session that belongs to this run.
 - The viewport is 1280x800 (`agent-browser set viewport 1280 800`).
-- The page has loaded fresh, and `window.__archiveOcellusProbe.snapshot().tick` has reached 8, past the 6-tick GET READY countdown.
+- The page has loaded fresh, `#start` has been clicked, and `window.__archiveOcellusProbe.snapshot().tick` has reached 8, past the 6-tick GET READY countdown.
 
 ## Driving conventions
 
@@ -38,6 +38,7 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 ## Features
 
 - [Arena render](./arena-render.md) covers page load, the floor, the player model and the HUD.
+- [Set-up, pause and saved loadouts](./setup-and-pause.md) covers the Start panel, keybinds before Start and while paused, Pause and Resume with the button or P, the pause log and result note, and loadouts saved per setup.
 - [Settings menu and run results](./settings-and-results.md) covers the Settings menu, the kill and death result panel and the `bosshp` link option.
 - [Click to walk](./click-to-walk.md) covers walking the player to a clicked floor tile, walking one tile a tick on a Control-click, and stopping at the platform's edge.
 - [Credit line](./credit-line.md) covers the Fan Content Policy credit that must stay visible.
