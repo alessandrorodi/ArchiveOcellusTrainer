@@ -322,6 +322,21 @@ P3_BOSS_TILE='{"x":20,"y":7}'
 P3_BOSS_CLICK_TICK=2
 P3_CLEAR='{"panel":{"lines":["Quadrant 1 cleared (interim end)","P3 time: 5 ticks (0:03.0)"],"buttons":["Repeat P3","Retry seed","Start P4"]},"tick":5,"bossHp":3937}'
 P3_START_P4='{"search":"?phase=p4&setup=ranged","bossHp":1312}'
+P3_SMITE_QUERY="?phase=p3&seed=1&invincible=on"
+P3_SMITE_PAGES=(
+  "flick 1 32 20 27 30"
+  "held 1 32 20"
+  "late 1 32 20 27 31"
+  "two-spins 2 35 20 27 30 31 33"
+  "three-spins 3 38 20 27 30 31 33 34 36"
+)
+P3_SMITE_SPINS='{"flick":[[31,1,1,"blocked",0,0,"melee"]],"held":[[31,1,1,"struck held",43,43,"melee"]],"late":[[31,1,1,"struck late",43,43,null]],"two-spins":[[31,1,2,"blocked",0,0,"melee"],[34,2,2,"blocked",0,0,"melee"]],"three-spins":[[31,1,3,"blocked",0,0,"melee"],[34,2,3,"blocked",0,0,"melee"],[37,3,3,"blocked",0,0,"melee"]]}'
+P3_SMITE_CHAT='{"held":"Spin 1 of 1 hit you for 43. Protect from Melee stayed on. Turn it off after the blades start, then back on for the spin.","late":"Spin 1 of 1 hit you for 43. Protect from Melee was not back on in time for the spin."}'
+P3_BLADES_CONTROL_TICK=25
+P3_BLADES_TICK=30
+P3_BLADES_BOX='{"left":260,"right":120,"up":20,"down":280}'
+P3_BLADES_MIN_SHARE='{"3d":0.5,"2d":0.4}'
+P3_BLADES_MAX_CONTROL_SHARE='{"3d":0.3,"2d":0}'
 CREDIT_LINE="Created using intellectual property belonging to Jagex Limited under the terms of Jagex's Fan Content Policy. This content is not endorsed by or affiliated with Jagex."
 
 log() { echo "verify: $*"; }
@@ -2065,28 +2080,9 @@ drive_p3_drill() {
   done
 
   node -e '
-    const fs = require("fs"), zlib = require("zlib"), [dir, bossNpc, swings, voidShot, clear, startP4] = process.argv.slice(1);
+    const fs = require("fs"), png = require("./scripts/png-pixels.cjs"), [dir, bossNpc, swings, voidShot, clear, startP4] = process.argv.slice(1);
     const read = (file) => JSON.parse(fs.readFileSync(`${dir}/${file}`, "utf8"));
-    function decode(file) {
-      const buf = fs.readFileSync(`${dir}/${file}`);
-      let at = 8, width = 0, channels = 4;
-      const idat = [];
-      while (at < buf.length) {
-        const len = buf.readUInt32BE(at), type = buf.toString("ascii", at + 4, at + 8), data = buf.subarray(at + 8, at + 8 + len);
-        if (type === "IHDR") [width, channels] = [data.readUInt32BE(0), data[9] === 6 ? 4 : 3];
-        if (type === "IDAT") idat.push(data);
-        at += 12 + len;
-      }
-      const raw = zlib.inflateSync(Buffer.concat(idat)), stride = width * channels, height = raw.length / (stride + 1), px = Buffer.alloc(height * stride);
-      for (let y = 0; y < height; y++) {
-        for (let i = 0; i < stride; i++) {
-          const a = i >= channels ? px[y * stride + i - channels] : 0, b = y ? px[(y - 1) * stride + i] : 0, c = y && i >= channels ? px[(y - 1) * stride + i - channels] : 0;
-          const p = a + b - c, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
-          px[y * stride + i] = (raw[y * (stride + 1) + 1 + i] + [0, a, b, (a + b) >> 1, pa <= pb && pa <= pc ? a : pb <= pc ? b : c][raw[y * (stride + 1)]]) & 255;
-        }
-      }
-      return { width, channels, px };
-    }
+    const decode = (file) => png.decode(`${dir}/${file}`);
     const tileColours = (mode) => {
       const { width, channels, px } = decode(`p3-arena-${mode}.png`);
       const mean = ({ at }) => {
@@ -2133,6 +2129,89 @@ drive_p3_drill() {
   local verdict=$?
   cat "$VERIFY_DIR/p3-checks.json"
   [[ $verdict -eq 0 ]] || log "a P3 drill check failed"
+  return $verdict
+}
+
+p3_smite_page() {
+  local name=$1 start=$2 last=$3 query="$P3_SMITE_QUERY" after
+  shift 3
+  [[ "$start" == 1 ]] || query="${query}&start=${start}"
+  ab open "${URL}${query}" >/dev/null || return 1
+  fight_tick_at_least 0 120000 || { log "the P3 smite ${name} page never started"; return 1; }
+  canvas_centre || { log "canvas box unreadable"; return 1; }
+  for after in "$@"; do
+    click_after_tick "$after" "$PROTECT_MELEE_RIGHT_PX" "$PROTECT_DOWN_PX" || { log "Protect from Melee was not clicked after P3 tick ${after} on the ${name} page"; return 1; }
+  done
+  fight_tick_at_least "$last" 30000 || { log "the P3 smite ${name} page never reached P3 tick ${last}"; return 1; }
+  ab wait "$CHAT_POLL_WAIT_MS" >/dev/null
+  ab --json eval "[...document.querySelectorAll('#game_chat li')].map((line) => line.textContent)" | json data.result >"$VERIFY_DIR/p3-smite-${name}-chat.json" || { log "the ${name} chat was not read"; return 1; }
+  p3_page_done "p3-smite-${name}"
+}
+
+p3_blades_page() {
+  local mode=$1
+  save_settings "{ use3dView: $([[ "$mode" == 3d ]] && echo true || echo false) }" || { log "the ${mode} view setting was not saved"; return 1; }
+  ab open "${URL}${P3_SMITE_QUERY}" >/dev/null || return 1
+  fight_tick_at_least "$P3_BLADES_CONTROL_TICK" 120000 || { log "the ${mode} blades page never reached P3 tick ${P3_BLADES_CONTROL_TICK}"; return 1; }
+  ab screenshot "$VERIFY_DIR/p3-blades-${mode}-${P3_BLADES_CONTROL_TICK}.png" >/dev/null || return 1
+  fight_tick_at_least "$P3_BLADES_TICK" 30000 || { log "the ${mode} blades page never reached P3 tick ${P3_BLADES_TICK}"; return 1; }
+  ab screenshot "$VERIFY_DIR/p3-blades-${mode}-${P3_BLADES_TICK}.png" >/dev/null || return 1
+  ab --json errors | json data.errors >"$VERIFY_DIR/p3-blades-${mode}-page-errors.json" || { log "page error capture failed"; return 1; }
+}
+
+drive_p3_smite() {
+  local page args
+  ab open "${URL}${P3_SMITE_QUERY}" >/dev/null || return 1
+  save_settings "{ use3dView: true }" || { log "the 3D view setting was not saved"; return 1; }
+  for page in "${P3_SMITE_PAGES[@]}"; do
+    read -ra args <<<"$page"
+    p3_smite_page "${args[@]}" || return 1
+  done
+  p3_blades_page 3d || return 1
+  p3_blades_page 2d || return 1
+  canvas_centre || { log "canvas box unreadable"; return 1; }
+
+  local capture
+  for capture in p3-smite-{flick,held,late,two-spins,three-spins}{.json,-chat.json,-page-errors.json} p3-blades-{3d,2d}-{"$P3_BLADES_CONTROL_TICK","$P3_BLADES_TICK"}.png p3-blades-{3d,2d}-page-errors.json; do
+    [[ -s "$VERIFY_DIR/$capture" ]] || { log "required capture ${capture} is missing or empty"; return 1; }
+  done
+
+  node -e '
+    const fs = require("fs"), { pixelShare } = require("./scripts/png-pixels.cjs"), [dir, spinsJson, chatJson, controlTick, bladesTick, boxJson, minJson, maxJson, cx, cy] = process.argv.slice(1);
+    const read = (file) => JSON.parse(fs.readFileSync(`${dir}/${file}`, "utf8"));
+    const [expectedSpins, expectedChat, box, minShare, maxControl] = [spinsJson, chatJson, boxJson, minJson, maxJson].map((text) => JSON.parse(text));
+    const pages = Object.keys(expectedSpins);
+    const said = (verdict) => (verdict.kind === "blocked" ? "blocked" : `struck ${verdict.why}`);
+    const spins = (log) => log.rows.flatMap((row) => row.events).filter((event) => event.kind === "player-hit" && event.hit.kind === "spin").map(({ at, hit, receipt }) => [at, hit.spin.nth, hit.spin.of, said(hit.verdict), receipt.requested, receipt.applied, receipt.prayer]);
+    const prayerOrders = (log) => log.rows.flatMap((row) => row.inputs.filter((input) => input.kind === "prayer-published").map((input) => [row.tick, input.prayer]));
+    const area = { minX: Number(cx) - box.left, maxX: Number(cx) + box.right, minY: Number(cy) - box.up, maxY: Number(cy) + box.down };
+    const looks = {
+      "3d": (r, g, b) => b >= 150 && r >= 90 && g <= 90 && b - g >= 100,
+      "2d": (r, g, b) => Math.abs(r - 0xb4) <= 24 && Math.abs(g - 0x8c) <= 24 && Math.abs(b - 0xff) <= 24,
+    };
+    const blades = Object.fromEntries(["3d", "2d"].map((mode) => [mode, Object.fromEntries([controlTick, bladesTick].map((t) => [t, pixelShare(`${dir}/p3-blades-${mode}-${t}.png`, looks[mode], area)]))]));
+    const observed = Object.fromEntries(pages.map((page) => {
+      const log = read(`p3-smite-${page}.json`);
+      return [page, { spins: spins(log), prayerOrders: prayerOrders(log), chat: read(`p3-smite-${page}-chat.json`) }];
+    }));
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    const spun = (page) => same(observed[page].spins, expectedSpins[page]);
+    const drawn = (mode) => blades[mode][bladesTick] >= minShare[mode] && blades[mode][controlTick] <= maxControl[mode];
+    const checks = {
+      p3SmiteFlickedOnPrayerTab: spun("flick") && observed.flick.prayerOrders.length === 3,
+      p3HeldPrayerTakesSpin: spun("held") && observed.held.chat.includes(expectedChat.held),
+      p3LateFlickTakesSpin: spun("late") && observed.late.chat.includes(expectedChat.late),
+      p3TwoSpinFlick: spun("two-spins"),
+      p3ThreeSpinFlick: spun("three-spins"),
+      smiteBladesDrawn: drawn("3d") && drawn("2d"),
+      noP3SmitePageErrors: [...pages.map((page) => `p3-smite-${page}-page-errors.json`), "p3-blades-3d-page-errors.json", "p3-blades-2d-page-errors.json"].map(read).every((list) => list.length === 0),
+    };
+    console.log(JSON.stringify({ observed: { ...observed, blades, area }, checks }, null, 2));
+    process.exit(Object.values(checks).every(Boolean) ? 0 : 1);
+  ' "$VERIFY_DIR" "$P3_SMITE_SPINS" "$P3_SMITE_CHAT" "$P3_BLADES_CONTROL_TICK" "$P3_BLADES_TICK" "$P3_BLADES_BOX" "$P3_BLADES_MIN_SHARE" "$P3_BLADES_MAX_CONTROL_SHARE" "$CX" "$CY" >"$VERIFY_DIR/p3-smite-checks.json"
+  local verdict=$?
+  cat "$VERIFY_DIR/p3-smite-checks.json"
+  [[ $verdict -eq 0 ]] || log "a P3 smite check failed"
   return $verdict
 }
 
@@ -2247,39 +2326,9 @@ drive() {
     const between = (rows, from, to) => rows.filter((row) => row.tick >= Number(from) && row.tick <= Number(to));
     const events = (rows, kind, pick) => upTo(rows, Number(lastTick)).flatMap((row) => row.events.filter((e) => e.kind === kind).map(pick));
     const rowAt = (rows, t) => rows.find((row) => row.tick === Number(t));
-    function decode(file) {
-      const zlib = require("zlib");
-      const buf = fs.readFileSync(`${dir}/${file}`);
-      let pos = 8, width = 0, height = 0, channels = 0;
-      const idat = [];
-      while (pos < buf.length) {
-        const len = buf.readUInt32BE(pos), type = buf.toString("ascii", pos + 4, pos + 8), data = buf.subarray(pos + 8, pos + 8 + len);
-        if (type === "IHDR") [width, height, channels] = [data.readUInt32BE(0), data.readUInt32BE(4), { 2: 3, 6: 4 }[data[9]]];
-        if (type === "IDAT") idat.push(data);
-        pos += 12 + len;
-      }
-      const raw = zlib.inflateSync(Buffer.concat(idat)), stride = width * channels, px = Buffer.alloc(height * stride);
-      for (let y = 0; y < height; y++) {
-        for (let i = 0; i < stride; i++) {
-          const a = i >= channels ? px[y * stride + i - channels] : 0, b = y ? px[(y - 1) * stride + i] : 0, c = y && i >= channels ? px[(y - 1) * stride + i - channels] : 0;
-          const p = a + b - c, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
-          px[y * stride + i] = (raw[y * (stride + 1) + 1 + i] + [0, a, b, (a + b) >> 1, pa <= pb && pa <= pc ? a : pb <= pc ? b : c][raw[y * (stride + 1)]]) & 255;
-        }
-      }
-      return { width, height, channels, px };
-    }
-    function pixelShare(file, matches, area) {
-      const { width, height, channels, px } = decode(file);
-      const { minX, maxX, minY, maxY } = area ?? { minX: 0, maxX: width - 1, minY: 0, maxY: height - 1 };
-      let hits = 0;
-      for (let y = minY; y <= maxY; y++) {
-        for (let x = minX; x <= maxX; x++) {
-          const i = (y * width + x) * channels;
-          if (matches(px[i], px[i + 1], px[i + 2])) hits++;
-        }
-      }
-      return Math.round((100000 * hits) / ((maxX - minX + 1) * (maxY - minY + 1))) / 1000;
-    }
+    const png = require("./scripts/png-pixels.cjs");
+    const decode = (file) => png.decode(`${dir}/${file}`);
+    const pixelShare = (file, matches, area) => png.pixelShare(`${dir}/${file}`, matches, area);
     const shardRgb = [1, 3, 5].map((i) => parseInt(explosionPixel.slice(i, i + 2), 16));
     function spot(file, matches, area) {
       const { width, height, channels, px } = decode(file);
@@ -2851,6 +2900,7 @@ drive() {
   local verdict=$?
   cat "$VERIFY_DIR/observed.json"
   drive_p3_drill || verdict=1
+  drive_p3_smite || verdict=1
   return $verdict
 }
 
