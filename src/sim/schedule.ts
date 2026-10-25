@@ -8,7 +8,7 @@ export type Slot<P, B> = Readonly<{ phase: (visitNumber: Cycle) => P; beats: rea
 export type Focus<M extends string> = Readonly<{ kind: "full-fight" }> | Readonly<{ kind: "drill"; mechanics: readonly [M, ...M[]] }>;
 export type DrillStart = Readonly<{ kind: "before-first-beat"; lead: TickSpan }> | Readonly<{ kind: "cycle-start" }>;
 
-export type Visit<S extends string> = Readonly<{ stage: S; start: Tick; number: Cycle; entered: "first" | "table-ended" | "breakpoint" }>;
+export type Visit<S extends string> = Readonly<{ stage: S; start: Tick; number: Cycle; entered: "first" | "table-ended" | "breakpoint" | "cut" }>;
 
 type NoInfer<S> = [S][S extends unknown ? 0 : never];
 
@@ -82,10 +82,10 @@ class Visits<S extends string, P, B> {
     return this.runStarts.filter(({ visit }) => visit.entered === "breakpoint" && visit.start < t).length;
   }
 
-  cutAt(t: Tick, stage: S): Visits<S, P, B> {
+  cutAt(t: Tick, stage: S, entered: "breakpoint" | "cut"): Visits<S, P, B> {
     const before = t === 0 ? null : this.entryAt(tick(t - 1));
     const kept = this.runStarts.filter(({ visit }) => visit.start < t);
-    return new Visits(this.script, [...kept, enter(stage, t, "breakpoint", before?.visits ?? new Map())], before);
+    return new Visits(this.script, [...kept, enter(stage, t, entered, before?.visits ?? new Map())], before);
   }
 
   private entryAt(t: Tick): Entry<S> {
@@ -166,7 +166,12 @@ export class Schedule<S extends string, P, B, M extends string> {
   advance(t: Tick, boss: BossHp): Schedule<S, P, B, M> {
     const next = this.script.breakpoints[this.visits.firedBefore(t)];
     if (next === undefined || !this.script.stages[this.visitAt(t).stage].breakable || boss.hp > Math.floor(boss.maxHp * next.atOrBelow)) return this;
-    return new Schedule(this.script, this.mechanicOf, this.focus, this.drillStart, this.horizon, this.visits.cutAt(t, next.enter));
+    return new Schedule(this.script, this.mechanicOf, this.focus, this.drillStart, this.horizon, this.visits.cutAt(t, next.enter, "breakpoint"));
+  }
+
+  /** Enters `stage` at `t` in place of the visit running there, for a turn that branches on a fact other than HP. Breakpoints still fire in order. */
+  cut(t: Tick, stage: S): Schedule<S, P, B, M> {
+    return new Schedule(this.script, this.mechanicOf, this.focus, this.drillStart, this.horizon, this.visits.cutAt(t, stage, "cut"));
   }
 
   private momentIn(visits: Visits<S, P, B>, t: Tick): Moment<P, B> {

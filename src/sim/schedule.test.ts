@@ -145,6 +145,41 @@ describe("HP breakpoints", () => {
   });
 });
 
+describe("cuts", () => {
+  type Chain = "swing" | "panic" | "destroy";
+  const chain = (): Script<Chain, string, string> => ({
+    first: "swing",
+    stages: {
+      swing: stage<Chain>("swing", 3, true, () => "swing"),
+      panic: stage<Chain>("panic", 6, true, () => "swing"),
+      destroy: stage<Chain>("destroy", 2, false, () => "destroy"),
+    },
+    breakpoints: [{ atOrBelow: hpFraction(0.5), enter: "destroy" }],
+  });
+
+  test("a cut enters its stage on its tick, so the table after it runs from there", () => {
+    const cut = schedule(chain()).cut(tick(3), "panic");
+
+    expect(ticks(2, 9).map((t) => cut.visitAt(t))).toEqual([
+      { stage: "swing", start: 0, number: 1, entered: "first" },
+      { stage: "panic", start: 3, number: 1, entered: "cut" },
+      { stage: "panic", start: 3, number: 1, entered: "cut" },
+      { stage: "panic", start: 3, number: 1, entered: "cut" },
+      { stage: "panic", start: 3, number: 1, entered: "cut" },
+      { stage: "panic", start: 3, number: 1, entered: "cut" },
+      { stage: "panic", start: 3, number: 1, entered: "cut" },
+      { stage: "swing", start: 9, number: 2, entered: "table-ended" },
+    ]);
+    expect(cut.at(tick(3))).toEqual({ tick: 3, phase: "panic-0 #1", beats: ["panic-0 of visit 1 from 3"] });
+  });
+
+  test("a cut is not a breakpoint, so the first breakpoint still fires after it", () => {
+    const cut = schedule(chain()).cut(tick(3), "panic").advance(tick(5), { hp: 50, maxHp: 100 });
+
+    expect([cut.visitAt(tick(5)), cut.breakpointsFiredBy(tick(5))]).toEqual([{ stage: "destroy", start: 5, number: 1, entered: "breakpoint" }, 1]);
+  });
+});
+
 describe("the stage contract", () => {
   const header = [
     'import { Schedule, slotTable, type Script, type Slot, type Stage, type Visit } from "./schedule";',
@@ -237,7 +272,7 @@ describe("the stage contract", () => {
       "unknown-breakpoint": ["4: Type '\"unknown\"' is not assignable to type '\"fight\"'."],
       "unknown-first": ["4: Type '\"unknown\"' is not assignable to type '\"fight\"'."],
       "stage-typed-string": [
-        "5: Type '(ended: Readonly<{ stage: string; start: Tick; number: Cycle; entered: \"first\" | \"table-ended\" | \"breakpoint\"; }>, visits: (stage: string) => number) => string' is not assignable to type '(ended: Readonly<{ stage: \"fight\"; start: Tick; number: Cycle; entered: \"first\" | \"table-ended\" | \"breakpoint\"; }>, visits: (stage: \"fight\") => number) => \"fight\"'.",
+        "5: Type '(ended: Readonly<{ stage: string; start: Tick; number: Cycle; entered: \"first\" | \"table-ended\" | \"breakpoint\" | \"cut\"; }>, visits: (stage: string) => number) => string' is not assignable to type '(ended: Readonly<{ stage: \"fight\"; start: Tick; number: Cycle; entered: \"first\" | \"table-ended\" | \"breakpoint\" | \"cut\"; }>, visits: (stage: \"fight\") => number) => \"fight\"'.",
       ],
       "table-typed-record-string": ["5: Type 'string' is not assignable to type 'Readonly<{ \"stage names must be string literals\": string; }>'."],
       "explicit-string-type-argument": ["4: Type 'string' is not assignable to type 'Readonly<{ \"stage names must be string literals\": string; }>'."],
