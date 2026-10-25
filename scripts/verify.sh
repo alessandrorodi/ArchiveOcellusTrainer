@@ -312,15 +312,18 @@ P3_CLEAR_QUERY="?phase=p3&seed=100&bosshp=3991"
 P3_ARENA_SHOT_TICK=3
 P3_ARENA_TILES='{"open":[{"x":25,"y":11},{"x":26,"y":11}],"closed":[{"x":16,"y":13},{"x":17,"y":13}],"rim":[{"x":28,"y":10}]}'
 P3_PRAY_TICK=1
-P3_SWINGS_LAST_TICK=21
-P3_SWINGS='[[7,"swing",5,5,"melee"],[10,"swing",2,2,"melee"],[17,"swing",1,1,"melee"],[20,"swing",2,2,"melee"]]'
+P3_SWINGS_LAST_TICK=18
+P3_SWINGS='[[4,"swing",2,2,"melee"],[7,"swing",5,5,"melee"],[14,"swing",4,4,"melee"],[17,"swing",1,1,"melee"]]'
 P3_FAR_EAST_TILE='{"x":27,"y":9}'
-P3_ESCAPE_TICK=6
-P3_VOID_SHOT_LAST_TICK=11
-P3_VOID_SHOT='[[7,"swing",5,5,"melee"],[10,"void-shot",20,20,"melee"]]'
+P3_ESCAPE_TICK=3
+P3_PANIC_LAST_TICK=11
+P3_PANIC='[[4,"swing",2,2,"melee"],[9,"panic",25,25,"melee"]]'
 P3_BOSS_TILE='{"x":20,"y":7}'
 P3_BOSS_CLICK_TICK=2
-P3_CLEAR='{"panel":{"lines":["Quadrant 1 cleared (interim end)","P3 time: 5 ticks (0:03.0)"],"buttons":["Repeat P3","Retry seed","Start P4"]},"tick":5,"bossHp":3937}'
+P3_CLEAR='{"panel":{"lines":["Quadrant 1 cleared (interim end)","P3 time: 6 ticks (0:03.6)"],"buttons":["Repeat P3","Retry seed","Start P4"]},"tick":6,"bossHp":3937}'
+P3_CHAIN_QUERY="?phase=p3&seed=1&invincible=on"
+P3_CHAIN_LAST_TICK=91
+P3_CHAIN='[[4,"swing"],[7,"swing"],[10,"shadow-slash"],[14,"swing"],[17,"swing"],[20,"shadow-slash"],[24,"spin"],[29,"last-saw"],[33,"swing"],[36,"swing"],[39,"shadow-slash"],[43,"swing"],[46,"swing"],[49,"shadow-slash"],[53,"untether"],[82,"slam"],[90,"swing"]]'
 P3_START_P4='{"search":"?phase=p4&setup=ranged","bossHp":1312}'
 CREDIT_LINE="Created using intellectual property belonging to Jagex Limited under the terms of Jagex's Fan Content Policy. This content is not endorsed by or affiliated with Jagex."
 
@@ -2033,14 +2036,18 @@ drive_p3_drill() {
   p3_page_done p3-swings || return 1
 
   ab open "${URL}${P3_QUERY}" >/dev/null || return 1
-  fight_tick_at_least 0 120000 || { log "the P3 void shot page never started"; return 1; }
+  fight_tick_at_least 0 120000 || { log "the P3 panic page never started"; return 1; }
   canvas_centre || { log "canvas box unreadable"; return 1; }
-  click_after_tick "$P3_PRAY_TICK" "$PROTECT_MELEE_RIGHT_PX" "$PROTECT_DOWN_PX" || { log "Protect from Melee was not clicked on the void shot page"; return 1; }
-  if tile_pixel p3-void-shot "$P3_FAR_EAST_TILE" "$P3_ESCAPE_TICK"; then
+  click_after_tick "$P3_PRAY_TICK" "$PROTECT_MELEE_RIGHT_PX" "$PROTECT_DOWN_PX" || { log "Protect from Melee was not clicked on the panic page"; return 1; }
+  if tile_pixel p3-panic "$P3_FAR_EAST_TILE" "$P3_ESCAPE_TICK"; then
     click_after_tick "$P3_ESCAPE_TICK" $((CLICK_X - CX)) $((CLICK_Y - CY)) || { log "the run to the far east was not clicked"; return 1; }
   fi
-  fight_tick_at_least "$P3_VOID_SHOT_LAST_TICK" 30000 || { log "the void shot page never reached P3 tick ${P3_VOID_SHOT_LAST_TICK}"; return 1; }
-  p3_page_done p3-void-shot || return 1
+  fight_tick_at_least "$P3_PANIC_LAST_TICK" 30000 || { log "the panic page never reached P3 tick ${P3_PANIC_LAST_TICK}"; return 1; }
+  p3_page_done p3-panic || return 1
+
+  ab open "${URL}${P3_CHAIN_QUERY}" >/dev/null || return 1
+  fight_tick_at_least "$P3_CHAIN_LAST_TICK" 180000 || { log "the P3 chain page never reached P3 tick ${P3_CHAIN_LAST_TICK}"; return 1; }
+  p3_page_done p3-chain || return 1
 
   ab open "${URL}${P3_CLEAR_QUERY}" >/dev/null || return 1
   fight_tick_at_least 0 120000 || { log "the P3 interim clear page never started"; return 1; }
@@ -2059,13 +2066,13 @@ drive_p3_drill() {
 
   local capture
   for capture in p3-arena-2d.png p3-arena-2d-tiles.json p3-arena-2d-page-errors.json p3-arena-3d.png p3-arena-3d-tiles.json p3-snapshot.json p3-boss-bar.json \
-    p3-swings.json p3-swings-console.log p3-swings-page-errors.json p3-void-shot.json p3-void-shot-console.log p3-void-shot-page-errors.json \
+    p3-swings.json p3-swings-console.log p3-swings-page-errors.json p3-panic.json p3-panic-console.log p3-panic-page-errors.json p3-chain.json p3-chain-page-errors.json \
     p3-clear-panel.json p3-clear.png p3-clear.json p3-clear-console.log p3-clear-page-errors.json p3-start-p4.json p3-start-p4-page-errors.json; do
     [[ -s "$VERIFY_DIR/$capture" ]] || { log "required capture ${capture} is missing or empty"; return 1; }
   done
 
   node -e '
-    const fs = require("fs"), zlib = require("zlib"), [dir, bossNpc, swings, voidShot, clear, startP4] = process.argv.slice(1);
+    const fs = require("fs"), zlib = require("zlib"), [dir, bossNpc, swings, panic, clear, startP4, chain] = process.argv.slice(1);
     const read = (file) => JSON.parse(fs.readFileSync(`${dir}/${file}`, "utf8"));
     function decode(file) {
       const buf = fs.readFileSync(`${dir}/${file}`);
@@ -2103,16 +2110,17 @@ drive_p3_drill() {
     const arenaDrawn = ({ open, closed, rim }) => [...open, ...closed].every(grey) && rim.every((rgb) => rgb !== null && rgb[1] - rgb[2] >= 20) &&
       Math.min(...open.map(lum)) >= Math.max(...closed.map(lum)) + 12;
     const hits = (log) => log.rows.flatMap((row) => row.events).filter((event) => event.kind === "player-hit").map(({ at, hit, receipt }) => [at, hit.kind, receipt.requested, receipt.applied, receipt.prayer]);
-    const [snapshot, bar, swingLog, voidLog, clearLog, panel, p4] = ["p3-snapshot.json", "p3-boss-bar.json", "p3-swings.json", "p3-void-shot.json", "p3-clear.json", "p3-clear-panel.json", "p3-start-p4.json"].map(read);
+    const [snapshot, bar, swingLog, panicLog, clearLog, panel, p4, chainLog] = ["p3-snapshot.json", "p3-boss-bar.json", "p3-swings.json", "p3-panic.json", "p3-clear.json", "p3-clear-panel.json", "p3-start-p4.json", "p3-chain.json"].map(read);
     const expectedClear = JSON.parse(clear), expectedStart = JSON.parse(startP4);
     const clearedAt = clearLog.rows.find((row) => row.events.some((event) => event.kind === "run-ended"));
     const observed = {
       arena,
       bossBar: [...new Set(Object.values(bar).flat())],
-      swings: hits(swingLog).filter(([at]) => at <= 20),
+      swings: hits(swingLog).filter(([at, kind]) => kind === "swing" && at <= 17),
       prayerOrders: swingLog.rows.flatMap((row) => row.inputs.filter((input) => input.kind === "prayer-published").map((input) => [row.tick, input.prayer])),
-      voidShot: hits(voidLog).filter(([at]) => at <= 10),
-      escape: voidLog.rows.flatMap((row) => row.inputs.filter((input) => input.kind === "walk-ordered").map((input) => [row.tick, input.destination])),
+      panic: hits(panicLog).filter(([at]) => at <= 10),
+      chain: chainLog.rows.flatMap((row) => row.events).filter((event) => event.kind === "boss-moved" && event.at <= 90).map(({ at, move }) => [at, move]),
+      escape: panicLog.rows.flatMap((row) => row.inputs.filter((input) => input.kind === "walk-ordered").map((input) => [row.tick, input.destination])),
       clear: { panel: { lines: panel.lines, buttons: panel.buttons }, run: panel.run, row: clearedAt && { tick: clearedAt.tick, bossHp: clearedAt.bossHp, events: clearedAt.events.map((event) => event.kind) } },
       startP4: p4,
     };
@@ -2120,16 +2128,17 @@ drive_p3_drill() {
     const checks = {
       p3BossIsNpc16677: swingLog.header.phase === "p3" && snapshot.fight?.boss.npcId === Number(bossNpc) && snapshot.fight.boss.visible && observed.bossBar.includes("5250 / 5250 (100.0%)"),
       p3ArenaDrawn: arenaDrawn(arena["2d"]) && arenaDrawn(arena["3d"]),
-      p3SwingsChipUnderMeleePrayer: observed.prayerOrders.length > 0 && observed.prayerOrders[0][0] < 7 && observed.prayerOrders[0][1] === "melee" && same(observed.swings, JSON.parse(swings)),
-      p3VoidShotOutOfReach: same(observed.voidShot, JSON.parse(voidShot)) && observed.escape.length === 1,
+      p3SwingsChipUnderMeleePrayer: observed.prayerOrders.length > 0 && observed.prayerOrders[0][0] < 4 && observed.prayerOrders[0][1] === "melee" && same(observed.swings, JSON.parse(swings)),
+      p3PanicOutOfReach: same(observed.panic, JSON.parse(panic)) && observed.escape.length === 1,
+      p3ChainAsRecorded: same(observed.chain, JSON.parse(chain)),
       p3InterimClear: same(observed.clear.panel, expectedClear.panel) && observed.clear.run?.kind === "ended" && observed.clear.run.reason.kind === "quadrant-cleared" &&
         observed.clear.row?.tick === expectedClear.tick && observed.clear.run.at === expectedClear.tick && observed.clear.row.bossHp.atPostTick === expectedClear.bossHp && observed.clear.row.events.includes("run-ended"),
       p3StartP4OpensP4: p4.search === expectedStart.search && p4.bossHp === expectedStart.bossHp && same(p4.rejected, []) && p4.logPhase === null && p4.phaseBox === "p4",
-      noP3PageErrors: ["p3-arena-2d-page-errors.json", "p3-swings-page-errors.json", "p3-void-shot-page-errors.json", "p3-clear-page-errors.json", "p3-start-p4-page-errors.json"].map(read).every((list) => list.length === 0),
+      noP3PageErrors: ["p3-arena-2d-page-errors.json", "p3-swings-page-errors.json", "p3-panic-page-errors.json", "p3-chain-page-errors.json", "p3-clear-page-errors.json", "p3-start-p4-page-errors.json"].map(read).every((list) => list.length === 0),
     };
     console.log(JSON.stringify({ observed, checks }, null, 2));
     process.exit(Object.values(checks).every(Boolean) ? 0 : 1);
-  ' "$VERIFY_DIR" "$BOSS_NPC" "$P3_SWINGS" "$P3_VOID_SHOT" "$P3_CLEAR" "$P3_START_P4" >"$VERIFY_DIR/p3-checks.json"
+  ' "$VERIFY_DIR" "$BOSS_NPC" "$P3_SWINGS" "$P3_PANIC" "$P3_CLEAR" "$P3_START_P4" "$P3_CHAIN" >"$VERIFY_DIR/p3-checks.json"
   local verdict=$?
   cat "$VERIFY_DIR/p3-checks.json"
   [[ $verdict -eq 0 ]] || log "a P3 drill check failed"
