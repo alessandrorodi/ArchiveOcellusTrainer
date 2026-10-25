@@ -5,12 +5,12 @@ import { OCELLUS_P3, OCELLUS_P4 } from "../OcellusTimings";
 import type { OcellusPlayer } from "../OcellusPlayer";
 import { bossBonuses, withDefenceFloor } from "../bossStats";
 import type { Tick } from "../../../../sim/brands";
-import { tick } from "../../../../sim/brands";
+import { tick, tile } from "../../../../sim/brands";
 import type { FrameOf, Heal, Hooks, Landed, Logged } from "../../../../sim/sdk/EncounterBinding";
 import { EncounterBinding } from "../../../../sim/sdk/EncounterBinding";
-import type { P3End, P3Event, P3Hit, P3Row, P3RunState } from "../P3Types";
+import type { BossStance, P3End, P3Event, P3Hit, P3Row, P3RunState } from "../P3Types";
 import type { InputObservation, PlayerObservation } from "../P4Types";
-import type { P3Fight, Reach, TurnStep } from "../p3/fight";
+import type { P3Fight, Reach, TurnOutput, TurnStep } from "../p3/fight";
 import { startFight, turn } from "../p3/fight";
 
 type BossStep = Readonly<{ player: PlayerObservation; bossHp: number }>;
@@ -21,11 +21,13 @@ const { boss, presentation } = OCELLUS_P4;
 export class OcellusP3 extends Mob {
   readonly binding: EncounterBinding<P3Run>;
   private fight: P3Fight = startFight();
+  /** What the last turn's phase has him do on this tick's step. */
+  private stance: BossStance = "chasing";
 
   private readonly hooks: Hooks<P3Run> = {
     "tick-opened": () => undefined,
     "before-npc-hits": () => ({ snapshot: { player: this.target.observe(), bossHp: this.currentStats.hitpoint }, outputs: [] }),
-    "npc-turn": ({ time }) => this.turn(time.encounter),
+    "npc-turn": ({ time, snapshot }) => this.turn(time.encounter, snapshot),
     "hit-applied": ({ hit: { cause, receipt } }) => [{ kind: "player-hit", at: cause.at, hit: cause, receipt }],
     "player-hits-settled": ({ time, landed, player }) => this.settlePlayerHits(time.encounter, landed, player.maxHp),
     "player-moved": () => undefined,
@@ -43,6 +45,12 @@ export class OcellusP3 extends Mob {
     this.stats = { ...boss.stats.value, hitpoint: maxHp };
     const lowestDefence = Math.ceil((this.stats.defence * boss.lowestDefencePercent.value) / 100);
     this.currentStats = withDefenceFloor({ ...this.stats, hitpoint: this.config.bossEntryHp ?? maxHp }, lowestDefence);
+  }
+
+  /** He hovers out of melee reach through Untether. */
+  levitating(): boolean {
+    const run = this.binding.view();
+    return run.kind === "running" && this.fight.schedule.at(run.at).phase.boss === "levitating";
   }
 
   override mobName(): string {
@@ -67,7 +75,7 @@ export class OcellusP3 extends Mob {
   }
 
   override get idlePoseId(): number {
-    return presentation.bossPoses.idle.value;
+    return this.levitating() ? OCELLUS_P3.bossPoses.untetherLoops.value : presentation.bossPoses.idle.value;
   }
 
   override get walkingPoseId(): number {
@@ -89,7 +97,7 @@ export class OcellusP3 extends Mob {
 
   private stepBeforeDeciding(): void {
     super.queueStep();
-    if (this.binding.view().kind !== "ended") super.movementStep();
+    if (this.binding.view().kind !== "ended" && this.stance === "chasing") super.movementStep();
   }
 
   override movementStep(): void {}
@@ -137,14 +145,24 @@ export class OcellusP3 extends Mob {
     }
   }
 
-  private turn(at: Tick): Pick<TurnStep, "outputs" | "ending"> {
+  private turn(at: Tick, snapshot: BossStep): Pick<TurnStep, "outputs" | "ending"> {
     const step = turn(this.config.seed, this.fight, {
       at,
-      player: this.target.observe(),
-      boss: { hp: this.currentStats.hitpoint, maxHp: this.stats.hitpoint, reach: this.reach() },
+      player: snapshot.player,
+      boss: { hp: snapshot.bossHp, maxHp: this.stats.hitpoint, reach: this.reach(), anchor: tile(this.location.x, this.location.y) },
     });
     this.fight = step.fight;
+    this.stance = step.fight.schedule.at(at).phase.boss;
+    step.outputs.forEach((output) => this.enact(output));
     return { outputs: step.outputs, ending: step.ending };
+  }
+
+  /** The SDK side of his moves: he rises from his corner for Untether, and a severed prayer stays off. */
+  private enact(output: TurnOutput): void {
+    if (output.kind !== "event") return;
+    const { event } = output;
+    if (event.kind === "boss-moved" && event.move === "untether") this.setLocation({ ...OCELLUS_P3.untether.corner.value });
+    if (event.kind === "prayer-severed") this.target.prayerController.disableProtectionPrayersForTicks(event.lockedFor);
   }
 
   private settlePlayerHits(at: Tick, landed: readonly Landed<P3Hit>[], maxHp: number): readonly (Logged<P3Event> | Heal)[] {

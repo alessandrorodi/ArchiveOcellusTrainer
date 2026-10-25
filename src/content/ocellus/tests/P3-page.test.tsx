@@ -60,7 +60,7 @@ describe("P3 behind the ARCHIVE_P3 build flag", () => {
     expect({ bossHp: fight?.boss.hp, rejected, phaseBox }).toEqual({ bossHp: 1312, rejected: ["phase=p3"], phaseBox: null });
   });
 
-  test("with the flag on, the 75% break shows the interim panel with the P3 time, and Repeat P3, Retry seed and Start P4 carry the setup", async () => {
+  test("with the flag on, the quadrant falling at 75% shows the interim panel with the P3 time, and Repeat P3, Retry seed and Start P4 carry the setup", async () => {
     vi.stubEnv("ARCHIVE_P3", "on");
     const navigation = captureNavigation();
     const fight = await openP3Fight("/?phase=p3&seed=100&bosshp=3991");
@@ -75,7 +75,7 @@ describe("P3 behind the ARCHIVE_P3 build flag", () => {
 
     expect({ whileRunning, shown, navigation: navigation.assigned }).toEqual({
       whileRunning: null,
-      shown: { lines: ["Quadrant 1 cleared (interim end)", "P3 time: 3 ticks (0:01.8)"], buttons: ["Repeat P3", "Retry seed", "Start P4"] },
+      shown: { lines: ["Quadrant 1 cleared (interim end)", "P3 time: 4 ticks (0:02.4)"], buttons: ["Repeat P3", "Retry seed", "Start P4"] },
       navigation: [
         "http://localhost/?phase=p3&bosshp=3991&setup=ranged",
         "http://localhost/?phase=p3&seed=100&bosshp=3991&setup=ranged",

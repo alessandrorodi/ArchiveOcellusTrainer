@@ -62,7 +62,17 @@ export async function startP3Drill(options: P3DrillOptions = {}) {
         .flatMap((row) => row.events)
         .filter((event): event is Extract<P3Event, { kind: K }> => event.kind === kind);
     },
+    /** Each boss move and its P3 tick, in order. */
+    moves() {
+      return rows().flatMap((row) => row.events.flatMap((event) => (event.kind === "boss-moved" ? [[event.at, event.move] as const] : [])));
+    },
     click: (on: At) => clickTile(region.world, on),
+    /** Puts the player on a tile at once, as the end of a tick would. */
+    place: (on: At) => player().setLocation({ x: on.x, y: on.y }),
+    /** Sets the boss's HP between ticks, as hits landing on him would. */
+    bossHp: (hp: number) => {
+      boss().currentStats.hitpoint = hp;
+    },
     pray: (name: ProtectionPrayer) => player().prayerController.findPrayerByName(name).toggle(player()),
     dispose() {
       trainer.dispose();
