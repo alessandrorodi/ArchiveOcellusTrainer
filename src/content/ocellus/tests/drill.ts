@@ -3,7 +3,7 @@ import type { Mob, Player, Unit, World } from "osrs-sdk";
 import { paintedFills } from "../../../../test/paintedTiles";
 import { OcellusRegion } from "../js/OcellusRegion";
 import type { DrillSelection } from "../js/OcellusTimings";
-import { OCELLUS_P4, parseDrillRequest } from "../js/OcellusTimings";
+import { OCELLUS_P4, defaultLoadout, parseDrillRequest } from "../js/OcellusTimings";
 import type { Style } from "../../../sim/combat";
 import type { FightEvent, TickRow } from "../js/P4Types";
 
@@ -50,7 +50,7 @@ export function startDrill(options: DrillOptions = {}) {
     throw new Error(`the drill link has no usable seed: ${link.search}`);
   });
   if (rejected.length > 0) throw new Error(`the drill link has options the trainer rejects: ${rejected.join(", ")}`);
-  const region = new OcellusRegion(config);
+  const region = new OcellusRegion(config, defaultLoadout(config.choices.setup.option.value));
   const trainer = new TrainerInstance(region, { force2d: true });
   trainer.mount(document.createElement("canvas"), document.createElement("div"));
   // The world tick after the last held one ends GET READY and is the boss's first step, P4 tick 0.

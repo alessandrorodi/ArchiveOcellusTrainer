@@ -5,13 +5,14 @@ import type { Item, SettingsState } from "osrs-sdk";
 import { GameOverlay, TrainerApp, TrainerLoadingSplash, useSettingsSnapshot } from "osrs-sdk-react";
 import { OcellusRegion } from "./content/ocellus/js/OcellusRegion";
 import { P3Region } from "./content/ocellus/js/P3Region";
-import type { DrillConfig, DrillRequest, P3Config } from "./content/ocellus/js/OcellusTimings";
-import { OCELLUS_P4, parseRequest } from "./content/ocellus/js/OcellusTimings";
+import type { DrillConfig, DrillRequest, Loadout, P3Config } from "./content/ocellus/js/OcellusTimings";
+import { OCELLUS_P4, defaultLoadout, parseRequest } from "./content/ocellus/js/OcellusTimings";
 import type { P3End, P3Log, P3Snapshot } from "./content/ocellus/js/P3Types";
 import type { FightLog, FightSnapshot, RunEnd } from "./content/ocellus/js/P4Types";
 import type { Tick } from "./sim/brands";
 import type { ClockState, Pause } from "./sim/sdk/RunClock";
 import { RunClock } from "./sim/sdk/RunClock";
+import { readSavedLoadout } from "./savedLoadouts";
 import type { BuildFlags } from "./flags";
 import { readBuildFlags } from "./flags";
 import { CHANGELOG } from "./content/ocellus/changelog";
@@ -68,12 +69,12 @@ function drawnIcons(items: readonly (Item | null | undefined)[]): VerificationPr
 
 type Drill = Readonly<{ phase: "p4"; region: OcellusRegion; config: DrillConfig }> | Readonly<{ phase: "p3"; region: P3Region; config: P3Config }>;
 
-function mount(request: DrillRequest): Drill {
+function mount(request: DrillRequest, loadout: Loadout): Drill {
   switch (request.phase) {
     case "p4":
-      return { phase: "p4", region: new OcellusRegion(request.config), config: request.config };
+      return { phase: "p4", region: new OcellusRegion(request.config, loadout), config: request.config };
     case "p3":
-      return { phase: "p3", region: new P3Region(request.config), config: request.config };
+      return { phase: "p3", region: new P3Region(request.config, loadout), config: request.config };
     default: {
       const unhandled: never = request;
       return unhandled;
@@ -137,14 +138,16 @@ function createTrainer() {
   readSettings();
   const flags = readBuildFlags();
   const request = parseRequest(new URL(window.location.href), () => crypto.getRandomValues(new Uint32Array(1))[0], flags);
-  const drill = mount(request);
+  const { setup } = request.config.choices;
+  const saved = readSavedLoadout(setup.key);
+  const drill = mount(request, saved.kind === "saved" ? saved.loadout : defaultLoadout(setup.option.value));
   drill.region.invincible = request.invincible;
   const trainer = new TrainerInstance(drill.region);
   const clock = new RunClock(trainer);
   if (process.env.NODE_ENV !== "production") exposeVerificationProbe(trainer, clock, drill.region, request.rejected);
   loadWebAnalytics();
   if (drill.phase === "p4") void startPerfTelemetry(drill.region, clock);
-  return { trainer, clock, drill, flags };
+  return { trainer, clock, drill, flags, unreadableLoadout: saved.kind === "unreadable" };
 }
 
 const SETUP_KEYS = Object.keys(OCELLUS_P4.choices.setup.options);
@@ -327,7 +330,7 @@ function isPauseKey(event: KeyboardEvent): boolean {
   return !isTyping(event.target) && !tabKeys().some((key) => key.toLowerCase() === PAUSE_KEY);
 }
 
-function RunGate({ clock, ready }: Readonly<{ clock: RunClock; ready: boolean }>) {
+function RunGate({ clock, ready, unreadableLoadout }: Readonly<{ clock: RunClock; ready: boolean; unreadableLoadout: string | null }>) {
   const state = useClockState(clock);
   useEffect(() => {
     const togglePause = (event: KeyboardEvent) => {
@@ -345,6 +348,7 @@ function RunGate({ clock, ready }: Readonly<{ clock: RunClock; ready: boolean }>
         <section id="start_panel" role="dialog" aria-labelledby="start_title">
           <h2 id="start_title">Ready?</h2>
           <p>Set your keybinds and settings first. Press P to pause during the run.</p>
+          {unreadableLoadout !== null && <p id="loadout_note">Your saved {unreadableLoadout} loadout could not be read, so this run uses the default loadout.</p>}
           <button id="start" type="button" autoFocus onClick={() => clock.start()}>Start</button>
         </section>
       ) : null;
@@ -511,7 +515,7 @@ function GameChat({ region }: Readonly<{ region: Readonly<{ chat(): readonly str
 }
 
 export function ArchiveOcellusApp() {
-  const [{ trainer, clock, drill, flags }] = useState(createTrainer);
+  const [{ trainer, clock, drill, flags, unreadableLoadout }] = useState(createTrainer);
   const [loading, setLoading] = useState<TrainerLoadingState>();
 
   return (
@@ -520,7 +524,7 @@ export function ArchiveOcellusApp() {
         <TrainerLoadingSplash state={loading} />
         <GameChat region={drill.region} />
         <DrillControls drill={drill} flags={flags} clock={clock} />
-        <RunGate clock={clock} ready={loading?.status === "ready"} />
+        <RunGate clock={clock} ready={loading?.status === "ready"} unreadableLoadout={unreadableLoadout ? label(drill.config.choices.setup.key) : null} />
         <RunResultPanel drill={drill} clock={clock} />
         <footer id="credits">
           <p id="maker_credit">

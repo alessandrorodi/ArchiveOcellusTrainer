@@ -225,20 +225,27 @@ type TrainerItem = Readonly<{ itemId: Selected<number>; stats: Selected<ItemStat
 
 export const GEAR_SLOTS = ["weapon", "helmet", "chest", "legs", "gloves", "cape", "necklace", "feet", "ring", "ammo"] as const;
 export type GearSlot = (typeof GEAR_SLOTS)[number];
-export type GearKeys = Readonly<{
-  weapon: "twistedBow" | "scytheOfVitur" | "tonalzticsOfRalos";
-  helmet: "masoriMaskF" | "inquisitorsGreatHelm";
-  chest: "masoriBodyF" | "inquisitorsHauberk";
-  legs: "masoriChapsF" | "inquisitorsPlateskirt";
-  gloves: "zaryteVambraces" | "ferociousGloves";
-  cape: "dizanasQuiver" | "infernalCape";
-  necklace: "necklaceOfRupture" | "amuletOfRancour";
-  feet: "avernicTreadsMax";
-  ring: "venatorRing" | "ultorRing";
-  ammo: "dragonArrows";
-}>;
+const GEAR_KEYS = {
+  weapon: ["twistedBow", "scytheOfVitur", "tonalzticsOfRalos"],
+  helmet: ["masoriMaskF", "inquisitorsGreatHelm"],
+  chest: ["masoriBodyF", "inquisitorsHauberk"],
+  legs: ["masoriChapsF", "inquisitorsPlateskirt"],
+  gloves: ["zaryteVambraces", "ferociousGloves"],
+  cape: ["dizanasQuiver", "infernalCape"],
+  necklace: ["necklaceOfRupture", "amuletOfRancour"],
+  feet: ["avernicTreadsMax"],
+  ring: ["venatorRing", "ultorRing"],
+  ammo: ["dragonArrows"],
+} as const satisfies { readonly [S in GearSlot]: readonly string[] };
+export type GearKeys = { readonly [S in GearSlot]: (typeof GEAR_KEYS)[S][number] };
 export type Setup = Readonly<{ [S in GearSlot]: GearKeys[S] }>;
-export type SupplyKey = "superCombatPotion" | "bastionPotion" | "saradominBrew" | "superRestore";
+const SUPPLY_KEYS = ["superCombatPotion", "bastionPotion", "saradominBrew", "superRestore"] as const;
+export type SupplyKey = (typeof SUPPLY_KEYS)[number];
+export type CarryKey = GearKeys[GearSlot] | SupplyKey;
+export const INVENTORY_SIZE = 28;
+declare const exactlyInventorySize: unique symbol;
+export type Inventory = readonly (CarryKey | null)[] & { readonly [exactlyInventorySize]: true };
+export type Loadout = Readonly<{ worn: Setup; inventory: Inventory }>;
 export type TrainerItemKey = "inquisitorsGreatHelm" | "inquisitorsHauberk" | "inquisitorsPlateskirt" | "tonalzticsOfRalos";
 type SdkIconKey = "masoriMaskF" | "masoriBodyF" | "masoriChapsF" | "zaryteVambraces";
 type InquisitorPiece = "inquisitorsGreatHelm" | "inquisitorsHauberk" | "inquisitorsPlateskirt";
@@ -1032,6 +1039,59 @@ type OptionKey<K extends ChoiceName> = keyof OptionsOf<K> & string;
 const SCATTERED = "scattered";
 export type DrillSelection = { readonly [K in Exclude<ChoiceName, "floorHoleLayout">]?: OptionKey<K> } & Readonly<{ floorHoleLayout?: OptionKey<"floorHoleLayout"> | typeof SCATTERED }>;
 const CHOICES: { readonly [K in ChoiceName]: Readonly<{ default: OptionKey<K>; options: OptionsOf<K> }> } = OCELLUS_P4.choices;
+
+export function isInventory(slots: readonly (CarryKey | null)[]): slots is Inventory {
+  return slots.length === INVENTORY_SIZE;
+}
+
+export function defaultLoadout(worn: Setup): Loadout {
+  const switches: CarryKey[] = [OCELLUS_P4.gear.specialWeapon.value];
+  for (const option of Object.values(CHOICES.setup.options)) {
+    for (const slot of GEAR_SLOTS) if (option.value[slot] !== worn[slot]) switches.push(option.value[slot]);
+  }
+  const carried = [...switches, ...OCELLUS_P4.gear.supplies.value];
+  const slots = Array.from({ length: INVENTORY_SIZE }, (_, index) => carried[index] ?? null);
+  if (!isInventory(slots)) throw new RangeError(`the default loadout fills ${carried.length} of ${INVENTORY_SIZE} slots`);
+  return { worn, inventory: slots };
+}
+
+const KEYS_BY_SLOT: { readonly [S in GearSlot]: readonly GearKeys[S][] } = GEAR_KEYS;
+const CARRY_KEYS: readonly CarryKey[] = [...GEAR_SLOTS.flatMap((slot): readonly CarryKey[] => KEYS_BY_SLOT[slot]), ...SUPPLY_KEYS];
+
+function wornKey<S extends GearSlot>(worn: object, slot: S): GearKeys[S] | null {
+  const raw: unknown = Object.prototype.hasOwnProperty.call(worn, slot) ? Reflect.get(worn, slot) : undefined;
+  return KEYS_BY_SLOT[slot].find((key) => key === raw) ?? null;
+}
+
+function parseWorn(worn: object): Setup | null {
+  const weapon = wornKey(worn, "weapon");
+  const helmet = wornKey(worn, "helmet");
+  const chest = wornKey(worn, "chest");
+  const legs = wornKey(worn, "legs");
+  const gloves = wornKey(worn, "gloves");
+  const cape = wornKey(worn, "cape");
+  const necklace = wornKey(worn, "necklace");
+  const feet = wornKey(worn, "feet");
+  const ring = wornKey(worn, "ring");
+  const ammo = wornKey(worn, "ammo");
+  if (!weapon || !helmet || !chest || !legs || !gloves || !cape || !necklace || !feet || !ring || !ammo) return null;
+  return { weapon, helmet, chest, legs, gloves, cape, necklace, feet, ring, ammo };
+}
+
+export function parseLoadout(raw: unknown): Loadout | null {
+  if (typeof raw !== "object" || raw === null || !("worn" in raw) || !("inventory" in raw)) return null;
+  const { worn, inventory }: { worn: unknown; inventory: unknown } = raw;
+  if (typeof worn !== "object" || worn === null || !Array.isArray(inventory)) return null;
+  const setup = parseWorn(worn);
+  const listed: readonly unknown[] = inventory;
+  const slots: (CarryKey | null)[] = [];
+  for (const entry of listed) {
+    const key = entry === null ? null : CARRY_KEYS.find((known) => known === entry);
+    if (key === undefined) return null;
+    slots.push(key);
+  }
+  return setup && isInventory(slots) ? { worn: setup, inventory: slots } : null;
+}
 
 class ResolvedChoice<K extends ChoiceName> {
   readonly #name: K;

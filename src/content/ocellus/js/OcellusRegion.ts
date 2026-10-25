@@ -1,6 +1,6 @@
 import { InvisibleMovementBlocker, Region, Sound, SoundCache, cacheSound } from "osrs-sdk";
 import type { Player } from "osrs-sdk";
-import type { DrillConfig } from "./OcellusTimings";
+import type { DrillConfig, Loadout } from "./OcellusTimings";
 import { OCELLUS_P4 } from "./OcellusTimings";
 import { dress, loadoutSnapshot } from "./OcellusLoadout";
 import { OcellusPlayer } from "./OcellusPlayer";
@@ -126,7 +126,7 @@ export class OcellusRegion extends Region {
   private mounted: Mounted = { kind: "unmounted" };
   invincible = false;
 
-  constructor(private readonly config: DrillConfig) {
+  constructor(private readonly config: DrillConfig, private readonly loadout: Loadout) {
     super();
   }
 
@@ -185,7 +185,7 @@ export class OcellusRegion extends Region {
       (target) => target instanceof Ocellus && target.outOfMeleeReach(),
     );
     const ocellus: Ocellus = new Ocellus(this, this.config, player, () => this.invincible);
-    dress(player, this.config.choices.setup.option.value);
+    dress(player, this.loadout);
     Object.values(sounds).forEach((sound) => SoundCache.preload(cacheSound(sound.value)));
     const views: Views = {
       field: new VoidField(this),

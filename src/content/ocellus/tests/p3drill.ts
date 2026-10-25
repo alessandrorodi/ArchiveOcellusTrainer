@@ -11,7 +11,7 @@ type ProtectionPrayer = "Protect from Magic" | "Protect from Range" | "Protect f
 
 export async function startP3Drill(options: P3DrillOptions = {}) {
   const { P3Region } = await vi.importActual<typeof import("../js/P3Region")>("../js/P3Region");
-  const { parseRequest } = await vi.importActual<typeof import("../js/OcellusTimings")>("../js/OcellusTimings");
+  const { defaultLoadout, parseRequest } = await vi.importActual<typeof import("../js/OcellusTimings")>("../js/OcellusTimings");
   Settings.readFromStorage();
   const link = new URL("http://localhost/?phase=p3");
   link.searchParams.set("seed", String(options.seed ?? 1));
@@ -22,7 +22,7 @@ export async function startP3Drill(options: P3DrillOptions = {}) {
   }, { p3: true });
   if (request.phase !== "p3") throw new Error(`the drill link opened ${request.phase}: ${link.search}`);
   if (request.rejected.length > 0) throw new Error(`the drill link has options the trainer rejects: ${request.rejected.join(", ")}`);
-  const region = new P3Region(request.config);
+  const region = new P3Region(request.config, defaultLoadout(request.config.choices.setup.option.value));
   region.invincible = options.invincible ?? false;
   const trainer = new TrainerInstance(region, { force2d: true });
   trainer.mount(document.createElement("canvas"), document.createElement("div"));

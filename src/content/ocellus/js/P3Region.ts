@@ -1,6 +1,6 @@
 import { InvisibleMovementBlocker, Region } from "osrs-sdk";
 import type { Player } from "osrs-sdk";
-import type { P3Config } from "./OcellusTimings";
+import type { P3Config, Loadout } from "./OcellusTimings";
 import { OCELLUS_P3, OCELLUS_P4 } from "./OcellusTimings";
 import { dress, loadoutSnapshot } from "./OcellusLoadout";
 import { OcellusPlayer } from "./OcellusPlayer";
@@ -45,7 +45,7 @@ export class P3Region extends Region {
   private mounted: Mounted = { kind: "unmounted" };
   invincible = false;
 
-  constructor(private readonly config: P3Config) {
+  constructor(private readonly config: P3Config, private readonly loadout: Loadout) {
     super();
   }
 
@@ -74,7 +74,7 @@ export class P3Region extends Region {
   initialiseRegion(): { player: Player } {
     const player: OcellusPlayer = new OcellusPlayer(this, { ...OCELLUS_P3.arena.playerSpawn.value }, () => boss.binding, () => false);
     const boss: OcellusP3 = new OcellusP3(this, this.config, player, () => this.invincible);
-    dress(player, this.config.choices.setup.option.value);
+    dress(player, this.loadout);
     for (const edge of QUADRANT_1_FLOOR.surround().tiles()) this.addEntity(new InvisibleMovementBlocker(this, { ...edge }));
     this.addPlayer(player);
     this.addMob(boss);

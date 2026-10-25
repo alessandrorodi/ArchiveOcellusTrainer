@@ -15,7 +15,7 @@ import {
   VenatorRing,
 } from "osrs-sdk";
 import type { Item, Player, UnitEquipment } from "osrs-sdk";
-import type { GearKeys, GearSlot, Setup, SupplyKey } from "./OcellusTimings";
+import type { CarryKey, GearKeys, GearSlot, Loadout, Setup, SupplyKey } from "./OcellusTimings";
 import { GEAR_SLOTS, OCELLUS_P4 } from "./OcellusTimings";
 import type { LoadoutSnapshot } from "./P4Types";
 import {
@@ -67,6 +67,10 @@ const SUPPLIES: { readonly [K in SupplyKey]: () => Item } = {
   superRestore: () => new SuperRestore(),
 };
 
+const CARRIED: { readonly [K in CarryKey]: () => Item } = {
+  ...ITEMS.weapon, ...ITEMS.helmet, ...ITEMS.chest, ...ITEMS.legs, ...ITEMS.gloves, ...ITEMS.cape, ...ITEMS.necklace, ...ITEMS.feet, ...ITEMS.ring, ...ITEMS.ammo, ...SUPPLIES,
+};
+
 function create<S extends GearSlot>(slot: S, key: GearKeys[S]): SlotItem<S> {
   return ITEMS[slot][key]();
 }
@@ -77,17 +81,11 @@ function wear<S extends GearSlot>(equipment: UnitEquipment, slot: S, setup: Setu
 
 const STANCES: Readonly<Record<typeof OCELLUS_P4.gear.scytheStance.value, AttackStyle>> = { jab: AttackStyle.AGGRESSIVECRUSH };
 
-export function dress(player: Player, worn: Setup): void {
+export function dress(player: Player, { worn, inventory }: Loadout): void {
   for (const slot of GEAR_SLOTS) wear(player.equipment, slot, worn);
-
-  const switches: Item[] = [create("weapon", OCELLUS_P4.gear.specialWeapon.value)];
-  for (const option of Object.values(OCELLUS_P4.choices.setup.options)) {
-    for (const slot of GEAR_SLOTS) {
-      if (option.value[slot] !== worn[slot]) switches.push(create(slot, option.value[slot]));
-    }
-  }
-  const supplies = OCELLUS_P4.gear.supplies.value.map((key) => SUPPLIES[key]());
-  [...switches, ...supplies].forEach((item, index) => (player.inventory[index] = item));
+  inventory.forEach((key, index) => {
+    if (key !== null) player.inventory[index] = CARRIED[key]();
+  });
   player.equipmentChanged();
   AttackStylesController.controller.setWeaponAttackStyle(new OcellusScythe(), STANCES[OCELLUS_P4.gear.scytheStance.value]);
 }
