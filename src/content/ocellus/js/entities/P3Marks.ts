@@ -15,35 +15,51 @@ const UNTETHER_OPACITY = 0.3;
 const INSET = 0.06;
 const LIFT = 0.01;
 
+/** Every tile of a mark in one geometry, two triangles a tile, so a mark is one draw call however many tiles it covers. */
+function tileQuads(tiles: readonly Tile[]): THREE.BufferGeometry {
+  const positions = new Float32Array(tiles.length * 18);
+  tiles.forEach(({ x, y }, index) => {
+    const [west, east, north, south] = [x + INSET, x + 1 - INSET, y - 1 + INSET, y - INSET];
+    const height = GROUND_OVERLAY_Y + LIFT;
+    positions.set([west, height, north, west, height, south, east, height, south, west, height, north, east, height, south, east, height, north], index * 18);
+  });
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  return geometry;
+}
+
 class MarksModel implements Model {
   private readonly group = new THREE.Group();
-  private readonly plane = new THREE.PlaneGeometry(1 - 2 * INSET, 1 - 2 * INSET).rotateX(-Math.PI / 2);
   private readonly materials = new Map<string, THREE.MeshBasicMaterial>();
+  private meshes: readonly THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>[] = [];
   private drawn: readonly Mark[] = [];
 
   constructor(private readonly marks: () => readonly Mark[]) {}
 
+  /** The marks change at most once a tick, so their geometry is rebuilt only then. */
   draw(scene: THREE.Scene, clockDelta: number, tickPercent: number, location: Location3, angleRadians: number, pitchRadians: number, visible: boolean): void {
     if (this.group.parent !== scene) scene.add(this.group);
     this.group.visible = visible;
     const marks = this.marks();
     if (marks === this.drawn) return;
     this.drawn = marks;
-    this.group.clear();
-    for (const { tiles, colour, opacity } of marks) {
-      const material = this.material(colour, opacity);
-      for (const { x, y } of tiles) {
-        const mesh = new THREE.Mesh(this.plane, material);
-        mesh.position.set(x + 0.5, GROUND_OVERLAY_Y + LIFT, y - 0.5);
-        this.group.add(mesh);
-      }
-    }
+    this.clear();
+    this.meshes = marks.map(({ tiles, colour, opacity }) => new THREE.Mesh(tileQuads(tiles), this.material(colour, opacity)));
+    this.meshes.forEach((mesh) => this.group.add(mesh));
   }
 
   destroy(scene: THREE.Scene): void {
     scene.remove(this.group);
-    this.plane.dispose();
+    this.clear();
     this.materials.forEach((material) => material.dispose());
+  }
+
+  private clear(): void {
+    this.meshes.forEach((mesh) => {
+      this.group.remove(mesh);
+      mesh.geometry.dispose();
+    });
+    this.meshes = [];
   }
 
   getWorldPosition(): THREE.Vector3 {
@@ -56,7 +72,7 @@ class MarksModel implements Model {
     const key = `${colour}:${opacity}`;
     const cached = this.materials.get(key);
     if (cached) return cached;
-    const material = new THREE.MeshBasicMaterial({ color: colour, transparent: true, opacity, depthWrite: false });
+    const material = new THREE.MeshBasicMaterial({ color: colour, transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide });
     this.materials.set(key, material);
     return material;
   }
@@ -78,7 +94,10 @@ export class P3Marks extends Entity {
 
   /** Called once a tick ends: a band that has landed goes, and the Untether zone follows his body. */
   settle(at: Tick, zone: readonly Tile[]): void {
-    this.bands = this.bands.filter((band) => band.landsAt > at);
+    const bands = this.bands.filter((band) => band.landsAt > at);
+    const moved = zone.length !== this.zone.length || zone.some((tile, index) => tile.x !== this.zone[index].x || tile.y !== this.zone[index].y);
+    if (bands.length === this.bands.length && !moved) return;
+    this.bands = bands;
     this.zone = zone;
     this.refresh();
   }
