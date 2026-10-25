@@ -20,6 +20,8 @@ export const ARCHIVE_OCELLUS_ASSETS = {
     ...Object.entries(lifeforceOrb.look).map(([visual, spotAnim]) => [visual, { id: spotAnim.value }]),
     ...Object.entries(presentation.transitionTells).map(([variant, spotAnim]) => [`${variant.replace(/-(.)/g, (_, letter: string) => letter.toUpperCase())}Tell`, { id: spotAnim.value }]),
     ["riftFlare", { id: rifts.burstFlare.value }],
+    ...Object.entries(OCELLUS_P3.smite.blades).map(([cue, spotAnim]) => [`smiteBlades${cue.charAt(0).toUpperCase()}${cue.slice(1)}`, { id: spotAnim.value }]),
+    ...Object.entries(OCELLUS_P3.smite.rubbleLook).map(([cue, spotAnim]) => [`rubble${cue.charAt(0).toUpperCase()}${cue.slice(1)}`, { id: spotAnim.value }]),
   ]),
   sounds: Object.fromEntries(Object.entries(presentation.sounds).map(([cue, sound]) => [cue, { id: sound.value }])),
 } as const satisfies CacheAssets;

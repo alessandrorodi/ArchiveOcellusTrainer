@@ -355,7 +355,7 @@ function RunResultText({ result }: Readonly<{ result: DrillOutcome }>) {
       case "quadrant-cleared":
         return (
           <>
-            <h2 id="run_result_title">Quadrant 1 cleared (interim end)</h2>
+            <h2 id="run_result_title">Quadrant {result.reason.quadrant} cleared (interim end)</h2>
             <RunTime phase="P3" at={result.at} invincible={result.invincible} />
           </>
         );

@@ -7,7 +7,7 @@ import type { Basis, Citations, Evidence, WikiRef } from "../../../sim/provenanc
 import { noWiki, wiki } from "../../../sim/provenance";
 import type { DrillStart, Focus } from "../../../sim/schedule";
 import type { BossOverhead, HoveringBoss, Mechanic, Special, Stage, TransitionKind, VoidKind } from "./P4Types";
-import type { AutoAttack, Quadrant, ReachRule } from "./P3Types";
+import type { AutoAttack, FlickRule, Quadrant, ReachRule, SpinCount } from "./P3Types";
 import { roll } from "./roll";
 
 type Scale = "unscaled" | "team-4" | "team-5" | "team-4-and-5" | "solo";
@@ -927,9 +927,30 @@ const DEFBIGBEAST_GUIDE = "https://www.youtube.com/watch?v=lT4DVmgDJak";
 const PANFLEET_SOLO = "https://www.youtube.com/watch?v=_upW4hBgHbA";
 const P3_CYCLE_FRAMES = guide(PANFLEET_SOLO, "5:20 to 5:45 at 1x: swings f114, f168, f294, f348, waves f240, f421, smite f478 (raid timer 30:13.00 at f0)");
 const P3_CHIP_FRAMES = guide(DEFBIGBEAST_GUIDE, "20:28 to 21:12 at 1x: waves f310 and f490, the tank's chips red 2 at f363 and red 1 at f417");
+const BUBBA_GUIDE = "https://www.youtube.com/watch?v=Wn3TtnL_Pa8";
+const NOAHSCAPE_GUIDE = "https://www.youtube.com/watch?v=-bXHKfzS1V4";
+const FLICK_CLIP = "https://oldschool.runescape.wiki/w/File:Ocellus_flicking.mp4";
+const FLICK_CLIP_PAGE = wiki(FLICK_CLIP, 15379157);
+const SMITE_COUNTS = guide(DEFBIGBEAST_GUIDE, "12:53 to 13:00 and 13:29 to 13:37 (quadrant 1), 17:43 to 17:51 (quadrant 2), 21:28 to 21:34 (quadrant 3): hitsplat on count 4, back on for count 4, then counts 2 and 1, then 4, 3 and 2");
 
 type AutoStep = Readonly<{ attack: AutoAttack; next: TickSpan }>;
-type P3BossPose = "swing" | "voidShot" | "wave";
+type P3BossPose = "swing" | "voidShot" | "wave" | "smite";
+type BladeCue = "windUp" | "spin" | "windDown";
+type RubbleCue = "falling" | "idle" | "despawn";
+type SwingDamage = Readonly<{ protectedDamage: DamageRange; unprotectedDamage: DamageRange }>;
+
+type SmiteRecipe = Readonly<{
+  spinsByQuadrant: Selected<Readonly<Record<Quadrant, SpinCount>>>;
+  openingBlow: Selected<SwingDamage>;
+  firstLandsAfterStart: Selected<TickSpan>;
+  spinGap: Selected<TickSpan>;
+  autosResumeAfterLastSpin: Selected<TickSpan>;
+  rubble: Readonly<{ landsAfterFirstSpin: Selected<TickSpan>; lasts: Selected<TickSpan>; damagePerTick: Selected<DamageRange> }>;
+  blades: Readonly<Record<BladeCue, Selected<number>>>;
+  blades2d: Selected<string>;
+  rubbleLook: Readonly<Record<RubbleCue, Selected<number>>>;
+  rubble2d: Selected<Readonly<{ falling: string; landed: string }>>;
+}>;
 
 type P3Recipe = Readonly<{
   arena: Readonly<{ grid: Selected<readonly string[]>; playerSpawn: Selected<Tile>; bossAnchor: Selected<Tile> }>;
@@ -938,6 +959,7 @@ type P3Recipe = Readonly<{
   autos: Selected<readonly [AutoStep, ...AutoStep[]]>;
   swing: Readonly<{ protectedDamage: Selected<DamageRange>; unprotectedDamage: Selected<DamageRange> }>;
   voidShot: Selected<DamageRange>;
+  smite: SmiteRecipe;
   bossPoses: Readonly<Record<P3BossPose, Selected<number>>>;
 }>;
 
@@ -1012,6 +1034,43 @@ const P3: P3Recipe = {
     swing: pose(14842, "npc_ocellus_phase3_melee_basic", "inferred", "the swing, 2 ticks; by its name"),
     voidShot: pose(14851, "npc_ocellus_phase3_basic_projectile_all", "inferred", "the void shot, 3 ticks; by its name"),
     wave: pose(14846, "npc_ocellus_phase3_melee_slash", "inferred", "the wave cast, 3 ticks; by its name and its four frame sounds"),
+    smite: pose(14845, "npc_ocellus_phase3_melee_prayer", "inferred", "the smite's opening blow, 3 ticks; by its name and its sounds 12593 and 12596 on frames 8 and 16"),
+  },
+  smite: {
+    spinsByQuadrant: selected({ 1: 1, 2: 2, 3: 3 }, "spec-single", "unscaled", "one spin more for each destroyed quadrant", BOSS_PAGE_P3, guide(BUBBA_GUIDE, "7:44 and 9:13"), guide(DEFBIGBEAST_GUIDE, "19:10"), guide(NOAHSCAPE_GUIDE, "16:42")),
+    openingBlow: selected<SwingDamage>(
+      { protectedDamage: { min: 0, max: 6 }, unprotectedDamage: { min: 0, max: 26 } },
+      "inferred",
+      "unscaled",
+      "a swing-like melee hit on the smite's first tick, which Protect from Melee takes down to the swing's chip; it hits wherever the player stands on the wedge (assumption)",
+      STRATEGIES_P3, guide(DEFBIGBEAST_GUIDE, "12:50 'Look for the hit splat on your character. Tick four.'"), guide(PANFLEET_SOLO, "the blade trail at f478 of 5:20 to 5:45"),
+    ),
+    firstLandsAfterStart: selected(span(4), "community-tested", "unscaled", "the first spin lands 4 ticks after the smite starts; counted on a 4-count tick counter, not frame-measured from the start", NO_WIKI_P3_TICKS, SMITE_COUNTS),
+    spinGap: selected(
+      span(3),
+      "footage-repeated",
+      "unscaled",
+      "each later spin lands 3 ticks after the one before; the wiki clip's bursts are 53 and 54 frames apart at 30 fps and panfleet's 54 frames apart at 1x, 18 frames a tick",
+      FLICK_CLIP_PAGE, guide(FLICK_CLIP, "bursts at frames 76, 129 and 183"), guide(PANFLEET_SOLO, "7:55 to 8:15 at 1x: bursts at f488 and f542"), guide(ROBINHOOD_GUIDE, "0:03:26 'three ticks apart'"), guide(DEFBIGBEAST_GUIDE, "17:56 to 18:00, 18:50 to 18:56, 21:38 to 21:51"),
+    ),
+    autosResumeAfterLastSpin: selected(span(3), "assumption", "unscaled", "the autos table starts again 3 ticks after the last spin lands, keeping the autos' 3-tick rhythm; no clip times it", NO_WIKI_P3_TICKS),
+    rubble: {
+      landsAfterFirstSpin: selected(span(5), "inferred", "unscaled", "rubble aimed at the player's tile on the first spin's landing lands 5 ticks later; spotanim 4346 vfx_ocellus_falling_debris lasts 154 cycles, 5.13 ticks, and RobinHood says it lands before the third spin finishes", NO_WIKI_P3_TICKS, cache("spotanim 4346 seq 14935"), guide(ROBINHOOD_GUIDE, "0:03:37 to 0:03:52"), guide(KIRBY_GUIDE, "7:22 'slow falling'")),
+      lasts: selected(span(10), "assumption", "unscaled", "the landed rubble hits for 10 ticks, its landing tick included; no clip times it", NO_WIKI_P3_TICKS),
+      damagePerTick: selected<DamageRange>({ min: 5, max: 7 }, "assumption", "unscaled", "5 to 7 each tick the player's tile is the rubble's at the boss's turn; Bubba's six and seven, widened by one", NO_WIKI_P3_TICKS, guide(BUBBA_GUIDE, "5:09 'six and seven'")),
+    },
+    blades: {
+      windUp: spotAnim(4325, "vfx_ocellus_phase3_melee_prayer_in", "inferred", "the blades spinning up on the boss from the smite's start, 120 cycles, 4 ticks, the gap to the first spin; model 62698, whose textured centre takes P4's tellCentre recolour"),
+      spin: spotAnim(4326, "vfx_ocellus_phase3_melee_prayer", "inferred", "the blades' loop, 90 cycles, 3 ticks, the spin gap, played on each spin that has another after it"),
+      windDown: spotAnim(4327, "vfx_ocellus_phase3_melee_prayer_out", "inferred", "the blades leaving, 102 cycles, played on the last spin"),
+    },
+    blades2d: selected("#b48cff", "assumption", "unscaled", "the 2D view's blades around the boss, from the smite's start to its last spin; the 2D view has no in-game counterpart", NO_WIKI_PRESENTATION),
+    rubbleLook: {
+      falling: spotAnim(4346, "vfx_ocellus_falling_debris", "inferred", "the rubble falling onto its tile, 154 cycles; model 62687"),
+      idle: spotAnim(4347, "vfx_ocellus_debris_idle", "inferred", "the landed rubble, looped while it hits"),
+      despawn: spotAnim(4348, "vfx_ocellus_debris_despawn", "inferred", "the rubble clearing, 1 tick"),
+    },
+    rubble2d: selected({ falling: "#e0b050", landed: "#8a5cc4" }, "assumption", "unscaled", "the 2D view's falling outline and landed rubble tile; the 2D view has no in-game counterpart", NO_WIKI_PRESENTATION),
   },
 };
 
@@ -1021,6 +1080,20 @@ export const OCELLUS_P3 = {
     reach: choice("melee-range", {
       "melee-range": selected<ReachRule>("melee-range", "community-tested", "team-4-and-5", "a swing becomes a void shot when the player is not in the SDK's melee range of the boss's 3x3 after his step; the wiki's unable to reach read as melee range", STRATEGIES_P3, guide(ROBINHOOD_GUIDE, "0:02:26")),
       "within-two": selected<ReachRule>("within-two", "spec-single", "unscaled", "a void shot when the player is more than 2 tiles from the boss's 3x3", BOSS_PAGE_P3),
+    }),
+    flick: choice("on-off-on", {
+      "on-off-on": selected<FlickRule>("on-off-on", "spec-single", "unscaled", "a spin is blocked when Protect from Melee is on at its reference tick, off on at least one tick after it, and on at the landing; the reference is the smite's start for the first spin and the previous landing after that", STRATEGIES_P3, BOSS_PAGE_P3, guide(DEFBIGBEAST_GUIDE, "17:53 'Then turn it back off. And then make sure your prayer is back on on tick one'")),
+      "off-then-on": selected<FlickRule>("off-then-on", "assumption", "unscaled", "a spin is blocked when the prayer is off on some tick from its reference and on at the landing, so a flick may start with the prayer already off", STRATEGIES_P3, guide(DEFBIGBEAST_GUIDE, "17:53")),
+      "held-blocks": selected<FlickRule>("held-blocks", "assumption", "unscaled", "practice: Protect from Melee on at the landing blocks the spin, flicked or held", NO_WIKI_PRACTICE),
+    }),
+    missedFlickDamage: choice("forty-three-to-fifty", {
+      "forty-three-to-fifty": selected<DamageRange>({ min: 43, max: 50 }, "assumption", "unscaled", "a spin that is not flicked hits for 43 to 50; no clip shows a missed flick, so this is P4's wrong-prayer range", NO_WIKI_P3_TICKS),
+      "swing-chip": selected<DamageRange>({ min: 0, max: 6 }, "assumption", "unscaled", "a missed flick hits for the swing's chip, to practise the timing without the damage", NO_WIKI_PRACTICE),
+    }),
+    start: choice("1", {
+      "1": selected<Quadrant>(1, "inferred", "unscaled", "the run starts on quadrant 1, the north-east wedge, at full HP; the smite spins once", NO_WIKI_P3_ARENA, owner("the quadrants run in a fixed order", "2026-10-24")),
+      "2": selected<Quadrant>(2, "assumption", "unscaled", "practice: the run starts in quadrant 2 at 75% HP and the smite spins twice; it stays on the north-east wedge until the crossings are built", NO_WIKI_PRACTICE),
+      "3": selected<Quadrant>(3, "assumption", "unscaled", "practice: the run starts in quadrant 3 at 50% HP and the smite spins three times; it stays on the north-east wedge until the crossings are built", NO_WIKI_PRACTICE),
     }),
   },
 } as const;
@@ -1145,11 +1218,33 @@ class ResolvedP3Choice<K extends P3ChoiceName> {
   }
 }
 
-export type P3Choices = Readonly<{ setup: ResolvedChoice<"setup">; bossMaxHp: ResolvedChoice<"bossMaxHp">; reach: ResolvedP3Choice<"reach"> }>;
+export type P3Choices = Readonly<{
+  setup: ResolvedChoice<"setup">;
+  bossMaxHp: ResolvedChoice<"bossMaxHp">;
+  reach: ResolvedP3Choice<"reach">;
+  flick: ResolvedP3Choice<"flick">;
+  missedFlickDamage: ResolvedP3Choice<"missedFlickDamage">;
+  start: ResolvedP3Choice<"start">;
+}>;
 export type P3Config = Readonly<{ seed: Seed; choices: P3Choices; bossEntryHp: number | null }>;
 type ParsedP3 = Readonly<{ config: P3Config; invincible: boolean; rejected: readonly string[] }>;
 
 const P3_KEYS: readonly string[] = ["setup", "bossMaxHp", ...Object.keys(OCELLUS_P3.choices)];
+
+function quadrantEntryHp(start: Quadrant, maxHp: number): number | null {
+  switch (start) {
+    case 1:
+      return null;
+    case 2:
+      return Math.floor(maxHp * OCELLUS_P3.thresholds.value[1]);
+    case 3:
+      return Math.floor(maxHp * OCELLUS_P3.thresholds.value[2]);
+    default: {
+      const unhandled: never = start;
+      return unhandled;
+    }
+  }
+}
 
 function parseP3Request(url: URL, freshSeed: () => number): ParsedP3 {
   const rejected: string[] = [];
@@ -1170,9 +1265,17 @@ function parseP3Request(url: URL, freshSeed: () => number): ParsedP3 {
     if (raw !== null) rejected.push(`${name}=${raw}`);
     return new ResolvedP3Choice(name, P3_CHOICES[name].default);
   };
-  const choices: P3Choices = { setup: p4Choice("setup"), bossMaxHp: p4Choice("bossMaxHp"), reach: p3Choice("reach") };
+  const choices: P3Choices = {
+    setup: p4Choice("setup"),
+    bossMaxHp: p4Choice("bossMaxHp"),
+    reach: p3Choice("reach"),
+    flick: p3Choice("flick"),
+    missedFlickDamage: p3Choice("missedFlickDamage"),
+    start: p3Choice("start"),
+  };
   if (run.rejected !== null) rejected.push(run.rejected);
-  const bossEntryHp = readBossHp(url, choices.bossMaxHp.option.value, rejected);
+  const maxHp = choices.bossMaxHp.option.value;
+  const bossEntryHp = readBossHp(url, maxHp, rejected) ?? quadrantEntryHp(choices.start.option.value, maxHp);
   return { config: { seed: run.seed, choices, bossEntryHp }, invincible, rejected };
 }
 

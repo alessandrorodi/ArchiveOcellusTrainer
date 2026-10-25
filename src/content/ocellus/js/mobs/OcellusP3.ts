@@ -10,7 +10,7 @@ import type { FrameOf, Heal, Hooks, Landed, Logged } from "../../../../sim/sdk/E
 import { EncounterBinding } from "../../../../sim/sdk/EncounterBinding";
 import type { P3End, P3Event, P3Hit, P3Row, P3RunState } from "../P3Types";
 import type { InputObservation, PlayerObservation } from "../P4Types";
-import type { P3Fight, Reach, TurnStep } from "../p3/fight";
+import type { P3Fight, P3Rules, Reach, TurnStep } from "../p3/fight";
 import { startFight, turn } from "../p3/fight";
 
 type BossStep = Readonly<{ player: PlayerObservation; bossHp: number }>;
@@ -20,7 +20,8 @@ const { boss, presentation } = OCELLUS_P4;
 
 export class OcellusP3 extends Mob {
   readonly binding: EncounterBinding<P3Run>;
-  private fight: P3Fight = startFight();
+  private readonly rules: P3Rules;
+  private fight: P3Fight;
 
   private readonly hooks: Hooks<P3Run> = {
     "tick-opened": () => undefined,
@@ -35,6 +36,9 @@ export class OcellusP3 extends Mob {
   constructor(region: Region, private readonly config: P3Config, private readonly target: OcellusPlayer, private readonly invincible: () => boolean) {
     super(region, OCELLUS_P3.arena.bossAnchor.value);
     this.setAggro(target);
+    const { choices } = config;
+    this.rules = { seed: config.seed, start: choices.start.option.value, flick: choices.flick.option.value, missedFlickDamage: choices.missedFlickDamage.option.value };
+    this.fight = startFight(this.rules);
     this.binding = new EncounterBinding(config.seed, tick(0), target, this.hooks);
   }
 
@@ -138,7 +142,7 @@ export class OcellusP3 extends Mob {
   }
 
   private turn(at: Tick): Pick<TurnStep, "outputs" | "ending"> {
-    const step = turn(this.config.seed, this.fight, {
+    const step = turn(this.rules, this.fight, {
       at,
       player: this.target.observe(),
       boss: { hp: this.currentStats.hitpoint, maxHp: this.stats.hitpoint, reach: this.reach() },

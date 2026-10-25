@@ -5,37 +5,71 @@ import { OCELLUS_P3, OCELLUS_P4 } from "./OcellusTimings";
 import { dress, loadoutSnapshot } from "./OcellusLoadout";
 import { OcellusPlayer } from "./OcellusPlayer";
 import type { Tile } from "../../../sim/brands";
-import type { P3Event, P3HitSource, P3Log, P3Snapshot } from "./P3Types";
+import type { HitReceipt } from "../../../sim/combat";
+import type { FlickMiss, P3Event, P3Hit, P3HitSource, P3Log, P3Snapshot, P3Stage } from "./P3Types";
 import { OcellusP3 } from "./mobs/OcellusP3";
 import { ARENA_SIZE, FLOOR, QUADRANT_1_FLOOR, RIM } from "./p3/arena";
+import { RubbleView, SmiteBlades } from "./entities/P3Views";
 
 const LETHAL_HIT: Readonly<Record<P3HitSource, string>> = {
   swing: "a swing",
   "void-shot": "a void shot",
+  "smite-blow": "the smite's opening blow",
+  spin: "a smite spin",
+  rubble: "the rubble",
+};
+
+const MISSED_FLICK: Readonly<Record<FlickMiss, string>> = {
+  held: "Protect from Melee stayed on. Turn it off after the blades start, then back on for the spin.",
+  late: "Protect from Melee was not back on in time for the spin.",
+  early: "Protect from Melee was already off when the smite started.",
 };
 
 const { bossPoses } = OCELLUS_P3;
 const OPEN_FLOOR = ["#4a4339", "#3f392f"] as const;
 const CLOSED_FLOOR = ["#2c2822", "#25221d"] as const;
 
-type Mounted = Readonly<{ kind: "unmounted" }> | Readonly<{ kind: "mounted"; boss: OcellusP3; player: OcellusPlayer; chat: string[] }>;
+type Mounted =
+  | Readonly<{ kind: "unmounted" }>
+  | Readonly<{ kind: "mounted"; boss: OcellusP3; player: OcellusPlayer; chat: string[]; blades: SmiteBlades; rubble: Set<RubbleView> }>;
+type Shown = Extract<Mounted, { kind: "mounted" }>;
 
-function present(event: P3Event, boss: OcellusP3, chat: string[]): void {
-  switch (event.kind) {
-    case "player-hit":
-      boss.playAnimation((event.hit.kind === "swing" ? bossPoses.swing : bossPoses.voidShot).value);
+function presentHit(hit: P3Hit, receipt: HitReceipt, { boss, blades, chat }: Shown): void {
+  switch (hit.kind) {
+    case "swing":
+      boss.playAnimation(bossPoses.swing.value);
       return;
-    case "wave-cast":
-      boss.playAnimation(bossPoses.wave.value);
+    case "void-shot":
+      boss.playAnimation(bossPoses.voidShot.value);
       return;
-    case "death-prevented":
-      chat.push(`Invincible: ${LETHAL_HIT[event.source]} would have killed you on tick ${event.at}.`);
+    case "smite-blow":
+      boss.playAnimation(bossPoses.smite.value);
       return;
-    case "stage-entered":
-    case "run-ended":
+    case "spin":
+      blades.land(hit.spin);
+      if (hit.verdict.kind === "struck") chat.push(`Spin ${hit.spin.nth} of ${hit.spin.of} hit you for ${receipt.applied}. ${MISSED_FLICK[hit.verdict.why]}`);
+      return;
+    case "rubble":
       return;
     default: {
-      const unhandled: never = event;
+      const unhandled: never = hit;
+      return unhandled;
+    }
+  }
+}
+
+function opensSmite(stage: P3Stage): boolean {
+  switch (stage) {
+    case "smite-1":
+    case "smite-2":
+    case "smite-3":
+      return true;
+    case "arrive":
+    case "autos":
+    case "destroy":
+      return false;
+    default: {
+      const unhandled: never = stage;
       return unhandled;
     }
   }
@@ -79,7 +113,9 @@ export class P3Region extends Region {
     this.addPlayer(player);
     this.addMob(boss);
     this.setBoss(boss);
-    this.mounted = { kind: "mounted", boss, player, chat: [] };
+    const blades = new SmiteBlades(this, boss);
+    this.addEntity(blades);
+    this.mounted = { kind: "mounted", boss, player, chat: [], blades, rubble: new Set() };
     return { player };
   }
 
@@ -97,8 +133,44 @@ export class P3Region extends Region {
 
   override postTick(): void {
     if (this.mounted.kind === "unmounted") return;
-    const { boss, chat } = this.mounted;
-    boss.binding.finishTick()?.events.forEach((event) => present(event, boss, chat));
+    const shown = this.mounted;
+    const row = shown.boss.binding.finishTick();
+    if (row === null) return;
+    row.events.forEach((event) => this.present(event, shown));
+    for (const rubble of shown.rubble) {
+      rubble.show(row.tick);
+      if (rubble.done) shown.rubble.delete(rubble);
+    }
+  }
+
+  private present(event: P3Event, shown: Shown): void {
+    switch (event.kind) {
+      case "player-hit":
+        presentHit(event.hit, event.receipt, shown);
+        return;
+      case "stage-entered":
+        if (opensSmite(event.stage)) shown.blades.open();
+        return;
+      case "wave-cast":
+        shown.boss.playAnimation(bossPoses.wave.value);
+        return;
+      case "rubble-aimed": {
+        const rubble = new RubbleView(this, event.tile, event.landsAt, event.until);
+        this.addEntity(rubble);
+        shown.rubble.add(rubble);
+        return;
+      }
+      case "death-prevented":
+        shown.chat.push(`Invincible: ${LETHAL_HIT[event.source]} would have killed you on tick ${event.at}.`);
+        return;
+      case "hazard-avoided":
+      case "run-ended":
+        return;
+      default: {
+        const unhandled: never = event;
+        return unhandled;
+      }
+    }
   }
 
   snapshot(): P3Snapshot | null {
