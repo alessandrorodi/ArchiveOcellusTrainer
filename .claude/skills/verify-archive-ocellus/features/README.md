@@ -55,3 +55,4 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Overheads, heals and rifts](./overheads-rifts.md) covers the boss's curse icons, deflected player hits, the Soul Split heal, and void rifts from spawn to kill or burst, with the kill line in the chat.
 - [Timing cues](./timing-cues.md) covers the sound checkboxes, resuming audio on the first click, the "End..." shout, the orb chimes, the flood sound and the lifeforce chat line.
 - [P3 drill (hidden)](./p3-drill.md) covers the `ARCHIVE_P3` build flag, the P3 arena, the boss's swings, waves and void shot, the 75% interim end, Start P4 and the Phase box.
+- [P3 smite flick (hidden)](./p3-smite.md) covers the smite's opening blow, flicking Protect from Melee through one, two or three spins, the chat for a missed flick, the blades in 2D and 3D, and the rubble.
